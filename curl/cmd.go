@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kingpin"
+	"github.com/vearutop/plt/loadgen"
 )
 
 type flags struct {
@@ -18,7 +19,7 @@ type flags struct {
 	NoKeepalive bool
 }
 
-func AddCommand() {
+func AddCommand(lf *loadgen.Flags) {
 	var (
 		flags         flags
 		captureString = map[string]*string{
@@ -99,7 +100,7 @@ func AddCommand() {
 				flags.HeaderMap["Accept-Encoding"] = "gzip, deflate"
 			}
 		}
-		run(flags)
+		run(lf, flags)
 		return nil
 	})
 }

@@ -17,10 +17,10 @@ github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZN
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.4.0 h1:2E4SXV/wtOkTonXsotYi4li6zVWxYlZuYNCXe9XRJyk=
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
-github.com/vearutop/dynhist-go v0.0.0-20191112233433-269a0580379c h1:eL8VpSukqSozCeg1Z/zXvK80/UBuXA5YtfpWo7Jy0io=
-github.com/vearutop/dynhist-go v0.0.0-20191112233433-269a0580379c/go.mod h1:7Cgyu5Ww8FwdB+Y+zawRz9cQT5oXAxw294L9lQ+JI/k=
 github.com/vearutop/dynhist-go v1.0.0 h1:SLYGcQMzmIoWnuqtF9lV8ULUBC735A56M5nL2CNth4c=
 github.com/vearutop/dynhist-go v1.0.0/go.mod h1:7Cgyu5Ww8FwdB+Y+zawRz9cQT5oXAxw294L9lQ+JI/k=
+golang.org/x/time v0.0.0-20191024005414-555d28b269f0 h1:/5xXl8Y5W96D+TtHSlonuFqGHIWVuyCkGJLwGh9JJFs=
+golang.org/x/time v0.0.0-20191024005414-555d28b269f0/go.mod h1:tRJNPiyCQ0inRvYxbN9jk5I+vvW/OXSQhTDSoE431IQ=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 h1:YR8cESwS4TdDjEe65xsg0ogRM/Nc3DYOhEAlW+xobZo=
 gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=

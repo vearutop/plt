@@ -2,23 +2,31 @@ package curl
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"expvar"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"os"
+	"os/signal"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/vearutop/dynhist-go"
+	"github.com/vearutop/plt/loadgen"
+	"golang.org/x/time/rate"
 )
 
-func run(f flags) {
+func run(lf *loadgen.Flags, f flags) {
 	u, err := url.Parse(f.URL)
 	if err != nil {
 		log.Fatalf("failed to parse URL %q: %s", f.URL, err)
@@ -35,16 +43,49 @@ func run(f flags) {
 	mu := sync.Mutex{}
 	respCode := map[int]int{}
 
-	tr := http.DefaultTransport.(*http.Transport)
-	tr.MaxIdleConnsPerHost = 50
+	concurrencyLimit := lf.Concurrency // Number of simultaneous jobs.
+	if concurrencyLimit <= 0 {
+		concurrencyLimit = 50
+	}
 
-	concurrencyLimit := 50 // Number of simultaneous jobs.
+	tr := http.DefaultTransport.(*http.Transport)
+	tr.MaxIdleConnsPerHost = concurrencyLimit
+
 	limiter := make(chan struct{}, concurrencyLimit)
 
 	start := time.Now()
 	slow := expvar.Int{}
 
-	for i := 0; i < 1000; i++ {
+	n := lf.Number
+	if n == 0 {
+		n = math.MaxInt64
+	}
+	dur := lf.Duration
+	if dur == 0 {
+		dur = 1000 * time.Hour
+	}
+
+	var rl *rate.Limiter
+	if lf.RateLimit > 0 {
+		rl = rate.NewLimiter(rate.Limit(lf.RateLimit), concurrencyLimit)
+	}
+
+	exit := make(chan os.Signal)
+	signal.Notify(exit, syscall.SIGTERM, os.Interrupt)
+	done := int32(0)
+	go func() {
+		<-exit
+		atomic.StoreInt32(&done, 1)
+	}()
+
+	println("Starting")
+	for i := 0; i < n; i++ {
+		if rl != nil {
+			err = rl.Wait(context.Background())
+			if err != nil {
+				println(err.Error())
+			}
+		}
 		limiter <- struct{}{} // Reserve limiter slot.
 		go func() {
 			defer func() {
@@ -95,8 +136,9 @@ func run(f flags) {
 			if err != nil {
 				println(err.Error())
 			} else {
-				ms := time.Since(start).Seconds() * 1000
-				if ms > 1000 {
+				si := time.Since(start)
+				ms := si.Seconds() * 1000
+				if si >= lf.SlowResponse {
 					slow.Add(1)
 				}
 				requestHist.Add(ms)
@@ -115,7 +157,7 @@ func run(f flags) {
 			}
 		}()
 
-		if time.Since(start) > 10*time.Second {
+		if time.Since(start) > dur || atomic.LoadInt32(&done) == 1 {
 			break
 		}
 	}
@@ -129,7 +171,7 @@ func run(f flags) {
 	println("Total requests:", requestHist.Count)
 	println("Request latency distribution in ms:")
 	println(requestHist.String())
-	println("Requests with latency more than 1000ms:", slow.Value())
+	println("Requests with latency more than "+lf.SlowResponse.String()+":", slow.Value())
 
 	println("DNS latency distribution in ms:")
 	println(dnsHist.String())
@@ -139,10 +181,8 @@ func run(f flags) {
 	println("Connection latency distribution in ms:")
 	println(connHist.String())
 
+	println("Responses by status code")
 	for code, cnt := range respCode {
-		println(code, ":", cnt)
+		println("[", code, "]", ":", cnt)
 	}
-	//for _, v := range requestHist.RawValues {
-	//	fmt.Printf("%.2f,", v)
-	//}
 }
