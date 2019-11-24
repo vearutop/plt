@@ -1,6 +1,9 @@
 package curl
 
 import (
+	"encoding/base64"
+	"errors"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -10,27 +13,37 @@ import (
 )
 
 type flags struct {
-	Header      []string
 	HeaderMap   map[string]string
 	URL         string
+	Body        string
 	Method      string
-	Data        string
-	Compressed  bool
 	NoKeepalive bool
 }
 
 func AddCommand(lf *loadgen.Flags) {
 	var (
-		flags         flags
+		flags   flags
+		capture struct {
+			header     []string
+			data       []string
+			compressed bool
+			user       string
+		}
+		captureStrings = map[string]*[]string{
+			"header": &capture.header,
+			"data":   &capture.data,
+		}
 		captureString = map[string]*string{
 			"url":     &flags.URL,
 			"request": &flags.Method,
-			"data":    &flags.Data,
+			"user":    &capture.user,
 		}
 		captureBool = map[string]*bool{
-			"compressed":   &flags.Compressed,
+			"compressed":   &capture.compressed,
 			"no-keepalive": &flags.NoKeepalive,
 		}
+		ignoredString = map[string]*string{}
+		ignoredBool   = map[string]*bool{}
 	)
 
 	curl := kingpin.Command("curl", "Repetitive HTTP transfer")
@@ -56,19 +69,19 @@ func AddCommand(lf *loadgen.Flags) {
 		}
 
 		if long != "header" && captureString[long] == nil && captureBool[long] == nil {
-			desc = desc + " (flag ignored)"
+			desc = desc + " (flag ignoredString)"
 		}
 
 		f := curl.Flag(long, desc+".")
 
 		if arg != "" {
-			if long == "header" {
-				f.StringsVar(&flags.Header)
+			if ss, ok := captureStrings[long]; ok {
+				f.StringsVar(ss)
 			} else {
 				if s, ok := captureString[long]; ok {
 					f.StringVar(s)
 				} else {
-					f.String()
+					ignoredString[long] = f.String()
 				}
 			}
 
@@ -77,7 +90,7 @@ func AddCommand(lf *loadgen.Flags) {
 			if b, ok := captureBool[long]; ok {
 				f.BoolVar(b)
 			} else {
-				f.Bool()
+				ignoredBool[long] = f.Bool()
 			}
 		}
 
@@ -87,18 +100,54 @@ func AddCommand(lf *loadgen.Flags) {
 	}
 
 	curl.Action(func(kp *kingpin.ParseContext) error {
-		flags.HeaderMap = make(map[string]string, len(flags.Header))
-		for _, h := range flags.Header {
+		ignoredFlags := make([]string, 0)
+		for f, v := range ignoredString {
+			if v != nil && *v != "" {
+				ignoredFlags = append(ignoredFlags, f)
+			}
+		}
+		for f, v := range ignoredBool {
+			if v != nil && *v {
+				ignoredFlags = append(ignoredFlags, f)
+			}
+		}
+		if len(ignoredFlags) > 0 {
+			log.Printf("Warning, these flags are ignored: %v\n", ignoredFlags)
+		}
+
+		if len(capture.data) == 1 {
+			flags.Body = capture.data[0]
+		} else if len(capture.data) > 1 {
+			flags.Body = strings.Join(capture.data, "&")
+		}
+
+		flags.HeaderMap = make(map[string]string, len(capture.header))
+		if capture.user != "" {
+			if strings.Index(capture.user, ":") == -1 {
+				return errors.New("user parameter must be in form user:pass")
+			}
+			flags.HeaderMap["Authorization"] = "Basic " + base64.StdEncoding.EncodeToString([]byte(capture.user))
+		}
+
+		if flags.Body != "" {
+			flags.HeaderMap["Content-Type"] = "application/x-www-form-urlencoded"
+		}
+
+		for _, h := range capture.header {
 			parts := strings.SplitN(h, ":", 2)
 			if len(parts) != 2 {
 				continue
 			}
 			flags.HeaderMap[http.CanonicalHeaderKey(parts[0])] = strings.Trim(parts[1], " ")
 		}
-		if flags.Compressed {
+		if capture.compressed {
 			if _, ok := flags.HeaderMap["Accept-Encoding"]; !ok {
 				flags.HeaderMap["Accept-Encoding"] = "gzip, deflate"
 			}
+		}
+		if !strings.HasPrefix(strings.ToLower(flags.URL), "http://") &&
+			!strings.HasPrefix(strings.ToLower(flags.URL), "https://") {
+			flags.URL = "http://" + flags.URL
 		}
 		run(lf, flags)
 		return nil

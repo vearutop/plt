@@ -96,8 +96,8 @@ func run(lf *loadgen.Flags, f flags) {
 			var dnsStart, connStart, tlsStart time.Time
 
 			var body io.Reader
-			if f.Data != "" {
-				body = bytes.NewBufferString(f.Data)
+			if f.Body != "" {
+				body = bytes.NewBufferString(f.Body)
 			}
 			req, _ := http.NewRequest(f.Method, f.URL, body)
 			for k, v := range f.HeaderMap {
