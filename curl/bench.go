@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"expvar"
 	"fmt"
+	http2 "github.com/vearutop/plt/http"
 	"io"
 	"io/ioutil"
 	"log"
@@ -26,7 +27,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func run(lf *loadgen.Flags, f flags) {
+func run(lf *loadgen.Flags, f http2.Flags) {
 	u, err := url.Parse(f.URL)
 	if err != nil {
 		log.Fatalf("failed to parse URL %q: %s", f.URL, err)
@@ -35,7 +36,7 @@ func run(lf *loadgen.Flags, f flags) {
 		log.Fatalf("failed to resolve URL host: %s", err)
 	}
 
-	requestHist := dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth, RawValues: []float64{}}
+	roundTripHist := dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth, RawValues: []float64{}}
 	dnsHist := dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	connHist := dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	tlsHist := dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
@@ -141,7 +142,7 @@ func run(lf *loadgen.Flags, f flags) {
 				if si >= lf.SlowResponse {
 					slow.Add(1)
 				}
-				requestHist.Add(ms)
+				roundTripHist.Add(ms)
 
 				_, err = io.Copy(ioutil.Discard, resp.Body)
 				if err != nil {
@@ -167,10 +168,10 @@ func run(lf *loadgen.Flags, f flags) {
 		limiter <- struct{}{}
 	}
 
-	println("Requests per second:", fmt.Sprintf("%.2f", float64(requestHist.Count)/time.Since(start).Seconds()))
-	println("Total requests:", requestHist.Count)
+	println("Requests per second:", fmt.Sprintf("%.2f", float64(roundTripHist.Count)/time.Since(start).Seconds()))
+	println("Total requests:", roundTripHist.Count)
 	println("Request latency distribution in ms:")
-	println(requestHist.String())
+	println(roundTripHist.String())
 	println("Requests with latency more than "+lf.SlowResponse.String()+":", slow.Value())
 
 	println("DNS latency distribution in ms:")
