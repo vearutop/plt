@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,6 +33,16 @@ type JobProducer struct {
 	f Flags
 
 	tr *http.Transport
+}
+
+func (j *JobProducer) Counts() map[string]int {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	res := make(map[string]int, len(j.respCode))
+	for code, cnt := range j.respCode {
+		res[strconv.Itoa(code)] = cnt
+	}
+	return res
 }
 
 type countingConn struct {
@@ -65,7 +76,6 @@ func (j *JobProducer) makeTransport() *http.Transport {
 
 	t := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
-		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
