@@ -4,6 +4,7 @@ import (
 	"context"
 	"expvar"
 	"fmt"
+	"github.com/gizak/termui/v3/widgets"
 	"log"
 	"math"
 	"os"
@@ -12,11 +13,16 @@ import (
 	"syscall"
 	"time"
 
+	ui "github.com/gizak/termui/v3"
 	"github.com/vearutop/dynhist-go"
 	"golang.org/x/time/rate"
 )
 
 func Run(lf Flags, jobProducer JobProducer) {
+	if err := ui.Init(); err != nil {
+		log.Fatalf("failed to initialize termui: %v", err)
+	}
+
 	roundTripHist := dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 
 	concurrencyLimit := lf.Concurrency // Number of simultaneous jobs.
@@ -46,9 +52,67 @@ func Run(lf Flags, jobProducer JobProducer) {
 	exit := make(chan os.Signal)
 	signal.Notify(exit, syscall.SIGTERM, os.Interrupt)
 	done := int32(0)
+
+	go func() {
+		uiEvents := ui.PollEvents()
+		for {
+			select {
+			case e := <-uiEvents:
+				switch e.ID {
+				case "q", "<C-c>":
+					exit <- os.Interrupt
+				}
+			}
+		}
+	}()
+
 	go func() {
 		<-exit
 		atomic.StoreInt32(&done, 1)
+	}()
+
+	go func() {
+
+		latency := make([]float64, 1, 100)
+
+		ticker := time.NewTicker(500 * time.Millisecond).C
+		for {
+			select {
+			case <-ticker:
+			case <-exit:
+				return
+			}
+
+			rate := float64(roundTripHist.Count) / time.Since(start).Seconds()
+
+			p := widgets.NewParagraph()
+			p.Title = "Round trip latency (press q or ctrl+c to quit)"
+			p.Text = ""
+
+			p.Text += fmt.Sprintf("100%%: %fms\n", roundTripHist.Percentile(1))
+			p.Text += fmt.Sprintf("99%%: %fms\n", roundTripHist.Percentile(0.99))
+			p.Text += fmt.Sprintf("95%%: %fms\n", roundTripHist.Percentile(0.95))
+			p.Text += fmt.Sprintf("90%%: %fms\n", roundTripHist.Percentile(0.90))
+			p.Text += fmt.Sprintf("50%%: %fms\n", roundTripHist.Percentile(0.50))
+			p.SetRect(0, 0, 100, 15)
+			//p.TextStyle.Fg = ui.ColorWhite
+			//p.BorderStyle.Fg = ui.ColorCyan
+
+			latency = append(latency, rate)
+
+			lc2 := widgets.NewPlot()
+			lc2.Title = "Requests per second:" + fmt.Sprintf("%.2f (%d)\n",
+				rate,
+				roundTripHist.Count,
+			)
+			lc2.Data = make([][]float64, 1)
+			lc2.Data[0] = latency
+			lc2.SetRect(0, 15, 100, 25)
+			lc2.AxesColor = ui.ColorWhite
+			lc2.LineColors[0] = ui.ColorYellow
+
+			ui.Render(p, lc2)
+		}
 	}()
 
 	println("Starting")
@@ -86,6 +150,8 @@ func Run(lf Flags, jobProducer JobProducer) {
 	for i := 0; i < cap(limiter); i++ {
 		limiter <- struct{}{}
 	}
+
+	ui.Close()
 
 	println("Requests per second:", fmt.Sprintf("%.2f", float64(roundTripHist.Count)/time.Since(start).Seconds()))
 	println("Total requests:", roundTripHist.Count)
