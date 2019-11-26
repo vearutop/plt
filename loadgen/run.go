@@ -16,7 +16,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func run(lf *Flags, jobProducer JobProducer) {
+func Run(lf Flags, jobProducer JobProducer) {
 	roundTripHist := dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 
 	concurrencyLimit := lf.Concurrency // Number of simultaneous jobs.

@@ -142,7 +142,13 @@ func AddCommand(lf *loadgen.Flags) {
 			!strings.HasPrefix(strings.ToLower(flags.URL), "https://") {
 			flags.URL = "http://" + flags.URL
 		}
-		run(lf, flags)
+		run(*lf, flags)
 		return nil
 	})
+}
+
+func run(lf loadgen.Flags, f http2.Flags) {
+	j := http2.NewJobProducer(f, lf)
+	loadgen.Run(lf, j)
+	j.Print()
 }
