@@ -31,9 +31,11 @@ func run(lf *loadgen.Flags, f flags) {
 	if err != nil {
 		log.Fatalf("failed to parse URL %q: %s", f.URL, err)
 	}
-	if _, err := net.LookupHost(u.Hostname()); err != nil {
+	addrs, err := net.LookupHost(u.Hostname())
+	if err != nil {
 		log.Fatalf("failed to resolve URL host: %s", err)
 	}
+	fmt.Printf("Host resolved: %v\n", addrs)
 
 	requestHist := dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth, RawValues: []float64{}}
 	dnsHist := dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
