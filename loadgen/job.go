@@ -4,5 +4,9 @@ import "time"
 
 type JobProducer interface {
 	Job(i int) (time.Duration, error)
-	Counts() map[string]int
+	RequestCounts() map[string]int
+}
+
+type JobWithOtherMetrics interface {
+	Metrics() map[string]map[string]float64
 }

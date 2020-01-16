@@ -26,6 +26,7 @@ type JobProducer struct {
 	tlsHist  *dynhist.Collector
 	mu       sync.Mutex
 	respCode map[int]int
+	respBody map[int][]byte
 
 	bytesWritten int64
 	bytesRead    int64
@@ -35,13 +36,29 @@ type JobProducer struct {
 	tr *http.Transport
 }
 
-func (j *JobProducer) Counts() map[string]int {
+func (j *JobProducer) RequestCounts() map[string]int {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	res := make(map[string]int, len(j.respCode))
 	for code, cnt := range j.respCode {
 		res[strconv.Itoa(code)] = cnt
 	}
+	return res
+}
+
+func (j *JobProducer) Metrics() map[string]map[string]float64 {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	elapsed := time.Since(j.start).Seconds()
+
+	res := map[string]map[string]float64{
+		"Bandwidth, MB/s": {
+			"Read":  float64(j.bytesRead) / (1024 * 1024 * elapsed),
+			"Write": float64(j.bytesWritten) / (1024 * 1024 * elapsed),
+		},
+	}
+
 	return res
 }
 
@@ -110,6 +127,7 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 	j.connHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	j.tlsHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	j.respCode = make(map[int]int, 5)
+	j.respBody = make(map[int][]byte, 5)
 	j.f = f
 
 	if _, ok := f.HeaderMap["User-Agent"]; !ok {
@@ -120,10 +138,15 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 }
 
 func (j *JobProducer) Print() {
-	println("DNS latency distribution in ms:")
-	println(j.dnsHist.String())
-	println("TLS handshake latency distribution in ms:")
-	println(j.tlsHist.String())
+	if j.dnsHist.Count > 0 {
+		println("DNS latency distribution in ms:")
+		println(j.dnsHist.String())
+	}
+
+	if j.tlsHist.Count > 0 {
+		println("TLS handshake latency distribution in ms:")
+		println(j.tlsHist.String())
+	}
 
 	println("Connection latency distribution in ms:")
 	println(j.connHist.String())
@@ -131,14 +154,18 @@ func (j *JobProducer) Print() {
 	println("Responses by status code")
 	j.mu.Lock()
 	codes := ""
+	resps := ""
 	for code, cnt := range j.respCode {
 		codes += fmt.Sprintf("[%d] %d\n", code, cnt)
+		resps += fmt.Sprintf("[%d]\n%s\n", code, string(j.respBody[code]))
 	}
 	j.mu.Unlock()
 	println(codes)
 
 	println("Bytes read", atomic.LoadInt64(&j.bytesRead))
 	println("Bytes written", atomic.LoadInt64(&j.bytesWritten))
+
+	println(resps)
 }
 
 func (j *JobProducer) Job(i int) (time.Duration, error) {
@@ -192,6 +219,17 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 	}
 	si := time.Since(start)
 
+	j.mu.Lock()
+	j.respCode[resp.StatusCode]++
+	if j.respCode[resp.StatusCode] == 1 {
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			println(err.Error())
+		}
+		j.respBody[resp.StatusCode] = body
+	}
+	j.mu.Unlock()
+
 	_, err = io.Copy(ioutil.Discard, resp.Body)
 	if err != nil {
 		println(err.Error())
@@ -200,9 +238,6 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 	if err != nil {
 		println(err.Error())
 	}
-	j.mu.Lock()
-	j.respCode[resp.StatusCode]++
-	j.mu.Unlock()
 
 	return si, nil
 }

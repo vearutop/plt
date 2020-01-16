@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"os/signal"
+	"sort"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -18,13 +19,18 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func Run(lf Flags, jobProducer JobProducer) {
-	if err := ui.Init(); err != nil {
-		log.Fatalf("failed to initialize termui: %v", err)
-	}
-	//defer ui.Close()
+const plotTailSize = 48
 
-	roundTripHist := dynhist.Collector{BucketsLimit: 30, WeightFunc: dynhist.LatencyWidth}
+func Run(lf Flags, jobProducer JobProducer) {
+	if lf.LiveUI {
+		if err := ui.Init(); err != nil {
+			log.Fatalf("failed to initialize termui: %v", err)
+		}
+	}
+
+	roundTripHist := dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
+	roundTripRolling := dynhist.Collector{BucketsLimit: 5, WeightFunc: dynhist.LatencyWidth}
+	roundTripPrecise := dynhist.Collector{BucketsLimit: 100, WeightFunc: dynhist.LatencyWidth}
 
 	concurrencyLimit := lf.Concurrency // Number of simultaneous jobs.
 	if concurrencyLimit <= 0 {
@@ -54,84 +60,136 @@ func Run(lf Flags, jobProducer JobProducer) {
 	signal.Notify(exit, syscall.SIGTERM, os.Interrupt)
 	done := int32(0)
 
-	go func() {
-		uiEvents := ui.PollEvents()
-		for {
-			select {
-			case e := <-uiEvents:
-				switch e.ID {
-				case "q", "<C-c>":
-					exit <- os.Interrupt
+	if lf.LiveUI {
+		go func() {
+			uiEvents := ui.PollEvents()
+			for {
+				select {
+				case e := <-uiEvents:
+					switch e.ID {
+					case "q", "<C-c>":
+						exit <- os.Interrupt
+					}
 				}
 			}
-		}
-	}()
+		}()
+	}
 
 	go func() {
 		<-exit
 		atomic.StoreInt32(&done, 1)
 	}()
 
-	go func() {
+	if lf.LiveUI {
+		go func() {
 
-		rates := make(map[string][]float64, 10)
+			rates := make(map[string][]float64, 10)
 
-		lc2 := widgets.NewPlot()
-		lc2.SetRect(0, 5, 100, 15)
-		lc2.ShowAxes = true
+			rpsPlot := widgets.NewPlot()
+			rpsPlot.SetRect(0, 7, 100, 15)
+			rpsPlot.ShowAxes = false
+			rpsPlot.HorizontalScale = 2
 
-		//lc3 := widgets.NewPlot()
-		//lc3.SetRect(0, 15, 100, 25)
-		//lc3.ShowAxes = true
+			latencyPlot := widgets.NewPlot()
+			latencyPlot.SetRect(0, 15, 100, 35)
+			latencyPlot.Data = [][]float64{0: {}, 1: {}}
+			latencyPlot.HorizontalScale = 2
 
-		ticker := time.NewTicker(500 * time.Millisecond).C
-		for {
-			select {
-			case <-ticker:
-			case <-exit:
-				return
-			}
-
-			ela := time.Since(start).Seconds()
-			reqRate := float64(roundTripHist.Count) / ela
-
-			p := widgets.NewParagraph()
-			p.Title = "Round trip latency, ms (press q or ctrl+c to quit)"
-			p.Text = ""
-
-			p.Text += fmt.Sprintf("100%%: %fms\n", roundTripHist.Percentile(1))
-			p.Text += fmt.Sprintf("99%%: %fms\n", roundTripHist.Percentile(0.99))
-			p.Text += fmt.Sprintf("95%%: %fms\n", roundTripHist.Percentile(0.95))
-			p.Text += fmt.Sprintf("90%%: %fms\n", roundTripHist.Percentile(0.90))
-			p.Text += fmt.Sprintf("50%%: %fms\n", roundTripHist.Percentile(0.50))
-			p.SetRect(0, 0, 100, 5)
-			//p.TextStyle.Fg = ui.ColorWhite
-			//p.BorderStyle.Fg = ui.ColorCyan
-
-			counts := jobProducer.Counts()
-			counts["tot"] = roundTripHist.Count
-			lc2.DataLabels = make([]string, 0, len(counts))
-			lc2.Data = make([][]float64, 0, len(counts))
-			for name, cnt := range counts {
-				rates[name] = append(rates[name], float64(cnt)/ela)
-				if len(rates[name]) < 2 {
-					continue
+			ticker := time.NewTicker(500 * time.Millisecond).C
+			for {
+				doReturn := false
+				select {
+				case <-ticker:
+				case <-exit:
+					doReturn = true
 				}
-				if len(rates[name]) > 90 {
-					rates[name] = rates[name][len(rates[name])-90:]
+				drawables := make([]ui.Drawable, 0, 2)
+				elaDur := time.Since(start)
+				ela := elaDur.Seconds()
+				reqRate := float64(roundTripHist.Count) / ela
+
+				latencyPercentiles := widgets.NewParagraph()
+				latencyPercentiles.Title = "Round trip latency, ms"
+				latencyPercentiles.Text = ""
+
+				latencyPercentiles.Text += fmt.Sprintf("100%%: %fms\n", roundTripPrecise.Percentile(100))
+				latencyPercentiles.Text += fmt.Sprintf("99%%: %fms\n", roundTripPrecise.Percentile(99))
+				latencyPercentiles.Text += fmt.Sprintf("95%%: %fms\n", roundTripPrecise.Percentile(95))
+				latencyPercentiles.Text += fmt.Sprintf("90%%: %fms\n", roundTripPrecise.Percentile(90))
+				latencyPercentiles.Text += fmt.Sprintf("50%%: %fms\n", roundTripPrecise.Percentile(50))
+				latencyPercentiles.SetRect(0, 0, 30, 7)
+
+				drawables = append(drawables, latencyPercentiles)
+
+				counts := jobProducer.RequestCounts()
+				counts["tot"] = roundTripHist.Count
+
+				requestCounters := widgets.NewParagraph()
+				requestCounters.Title = "Request Count"
+				requestCounters.Text = ""
+
+				requestCounters.SetRect(30, 0, 60, 7)
+
+				drawables = append(drawables, requestCounters)
+
+				rpsPlot.DataLabels = make([]string, 0, len(counts))
+				rpsPlot.Data = make([][]float64, 0, len(counts))
+
+				keys := make([]string, 0, len(counts))
+				for k, _ := range counts {
+					keys = append(keys, k)
 				}
-				lc2.DataLabels = append(lc2.DataLabels, name)
-				lc2.Data = append(lc2.Data, rates[name])
+				sort.Strings(keys)
+				for _, name := range keys {
+					cnt := counts[name]
+					requestCounters.Text += fmt.Sprintf("%s: %d\n", name, cnt)
+
+					rates[name] = append(rates[name], float64(cnt)/ela)
+					if len(rates[name]) < 2 {
+						continue
+					}
+					if len(rates[name]) > plotTailSize {
+						rates[name] = rates[name][len(rates[name])-plotTailSize:]
+					}
+					rpsPlot.DataLabels = append(rpsPlot.DataLabels, name)
+					rpsPlot.Data = append(rpsPlot.Data, rates[name])
+				}
+
+				rpsPlot.Title = "Requests per second:" + fmt.Sprintf("%.2f (total requests: %d, time passed: %s)\n",
+					reqRate,
+					roundTripHist.Count,
+					elaDur.String(),
+				)
+
+				latencyPlot.Data[0] = append(latencyPlot.Data[0], roundTripRolling.Min)
+				latencyPlot.Data[1] = append(latencyPlot.Data[1], roundTripRolling.Max)
+				if len(latencyPlot.Data[0]) > plotTailSize {
+					latencyPlot.Data[0] = latencyPlot.Data[0][len(latencyPlot.Data[0])-plotTailSize:]
+					latencyPlot.Data[1] = latencyPlot.Data[1][len(latencyPlot.Data[1])-plotTailSize:]
+				}
+
+				latencyPlot.Title = "Min/Max Latency, ms"
+
+				if len(latencyPlot.Data[0]) > 1 {
+					drawables = append(drawables, latencyPlot)
+				}
+
+				drawables = append(drawables, rpsPlot)
+
+				ui.Render(drawables...)
+				roundTripRolling.Lock()
+				roundTripRolling.Buckets = nil
+				roundTripRolling.Count = 0
+				roundTripRolling.Min = 0
+				roundTripRolling.Max = 0
+				roundTripRolling.Unlock()
+
+				if doReturn {
+					return
+				}
 			}
-
-			lc2.Title = "Requests per second:" + fmt.Sprintf("%.2f (%d)\n",
-				reqRate,
-				roundTripHist.Count,
-			)
-
-			ui.Render(p, lc2)
-		}
-	}()
+		}()
+	}
 
 	for i := 0; i < n; i++ {
 		if rl != nil {
@@ -156,6 +214,8 @@ func Run(lf Flags, jobProducer JobProducer) {
 				slow.Add(1)
 			}
 			roundTripHist.Add(ms)
+			roundTripPrecise.Add(ms)
+			roundTripRolling.Add(ms)
 		}()
 
 		if time.Since(start) > dur || atomic.LoadInt32(&done) == 1 {
@@ -168,7 +228,9 @@ func Run(lf Flags, jobProducer JobProducer) {
 		limiter <- struct{}{}
 	}
 
-	ui.Close()
+	if lf.LiveUI {
+		ui.Close()
+	}
 
 	println("Requests per second:", fmt.Sprintf("%.2f", float64(roundTripHist.Count)/time.Since(start).Seconds()))
 	println("Total requests:", roundTripHist.Count)
