@@ -8,4 +8,5 @@ type Flags struct {
 	RateLimit    int
 	Duration     time.Duration
 	SlowResponse time.Duration
+	LiveUI       bool
 }

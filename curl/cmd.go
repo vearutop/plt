@@ -3,6 +3,7 @@ package curl
 import (
 	"encoding/base64"
 	"errors"
+	http2 "github.com/vearutop/plt/http"
 	"log"
 	"net/http"
 	"regexp"
@@ -12,17 +13,9 @@ import (
 	"github.com/vearutop/plt/loadgen"
 )
 
-type flags struct {
-	HeaderMap   map[string]string
-	URL         string
-	Body        string
-	Method      string
-	NoKeepalive bool
-}
-
 func AddCommand(lf *loadgen.Flags) {
 	var (
-		flags   flags
+		flags   http2.Flags
 		capture struct {
 			header     []string
 			data       []string
@@ -112,7 +105,7 @@ func AddCommand(lf *loadgen.Flags) {
 			}
 		}
 		if len(ignoredFlags) > 0 {
-			log.Printf("Warning, these flags are ignored: %v\n", ignoredFlags)
+			log.Printf("Warning, these Flags are ignored: %v\n", ignoredFlags)
 		}
 
 		if len(capture.data) == 1 {
@@ -149,7 +142,13 @@ func AddCommand(lf *loadgen.Flags) {
 			!strings.HasPrefix(strings.ToLower(flags.URL), "https://") {
 			flags.URL = "http://" + flags.URL
 		}
-		run(lf, flags)
+		run(*lf, flags)
 		return nil
 	})
+}
+
+func run(lf loadgen.Flags, f http2.Flags) {
+	j := http2.NewJobProducer(f, lf)
+	loadgen.Run(lf, j)
+	j.Print()
 }
