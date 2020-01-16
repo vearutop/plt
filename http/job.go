@@ -9,10 +9,13 @@ import (
 	"github.com/vearutop/plt/loadgen"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptrace"
+	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -114,6 +117,16 @@ func (j *JobProducer) makeTransport() *http.Transport {
 }
 
 func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
+	u, err := url.Parse(f.URL)
+	if err != nil {
+		log.Fatalf("failed to parse URL: %s", err)
+	}
+	addrs, err := net.LookupHost(u.Hostname())
+	if err != nil {
+		log.Fatalf("failed to resolve URL host: %s", err)
+	}
+	println("Host resolved:", strings.Join(addrs, ","))
+
 	j := JobProducer{}
 
 	concurrencyLimit := lf.Concurrency // Number of simultaneous jobs.
