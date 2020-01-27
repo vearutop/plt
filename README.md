@@ -1,12 +1,13 @@
 # Pocket load tester
 
-<img src="https://vignette.wikia.nocookie.net/looneytunes/images/4/46/Plucky_Anvil_2.gif" align="right" width="354" height="271" />
+<img src="https://vignette.wikia.nocookie.net/looneytunes/images/4/46/Plucky_Anvil_2.gif/revision/latest/scale-to-width-down/150?cb=20190522080043" align="right" width="150" height="115" />
 
 Scale curl requests, cousin of `ab`, `siege`, [`hey`](https://github.com/rakyll/hey).
 
 ![Code lines](https://sloc.xyz/github/vearutop/plt/?category=code)
 ![Comments](https://sloc.xyz/github/vearutop/plt/?category=comments)
 
+![plt](https://user-images.githubusercontent.com/1381436/73143999-dd4d5800-40a0-11ea-9308-8e02773ec2d6.gif)
 
 ## Install
 
