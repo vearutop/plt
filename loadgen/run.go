@@ -232,9 +232,15 @@ func Run(lf Flags, jobProducer JobProducer) {
 		ui.Close()
 	}
 
-	println("Requests per second:", fmt.Sprintf("%.2f", float64(roundTripHist.Count)/time.Since(start).Seconds()))
-	println("Total requests:", roundTripHist.Count)
-	println("Request latency distribution in ms:")
-	println(roundTripHist.String())
-	println("Requests with latency more than "+lf.SlowResponse.String()+":", slow.Value())
+	fmt.Println("Requests per second:", fmt.Sprintf("%.2f", float64(roundTripHist.Count)/time.Since(start).Seconds()))
+	fmt.Println("Total requests:", roundTripHist.Count)
+	fmt.Println("Request latency distribution in ms:")
+	fmt.Println(roundTripHist.String())
+	fmt.Println("Request latency percentiles:")
+	fmt.Printf("99%%: %fms\n", roundTripPrecise.Percentile(99))
+	fmt.Printf("95%%: %fms\n", roundTripPrecise.Percentile(95))
+	fmt.Printf("90%%: %fms\n", roundTripPrecise.Percentile(90))
+	fmt.Printf("50%%: %fms\n\n", roundTripPrecise.Percentile(50))
+	fmt.Println("Requests with latency more than "+lf.SlowResponse.String()+":", slow.Value())
+
 }

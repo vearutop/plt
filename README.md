@@ -1,9 +1,12 @@
 # Pocket load tester
 
+<img src="https://vignette.wikia.nocookie.net/looneytunes/images/4/46/Plucky_Anvil_2.gif" align="right" width="354" height="271" />
+
+Scale curl requests, cousin of `ab`, `siege`, [`hey`](https://github.com/rakyll/hey).
+
 ![Code lines](https://sloc.xyz/github/vearutop/plt/?category=code)
 ![Comments](https://sloc.xyz/github/vearutop/plt/?category=comments)
 
-This tool scales curl requests, from the same family as `ab`, `siege`, [`hey`](https://github.com/rakyll/hey).
 
 ## Install
 
