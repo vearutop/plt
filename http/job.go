@@ -125,7 +125,7 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 	if err != nil {
 		log.Fatalf("failed to resolve URL host: %s", err)
 	}
-	println("Host resolved:", strings.Join(addrs, ","))
+	fmt.Println("Host resolved:", strings.Join(addrs, ","))
 
 	j := JobProducer{}
 
@@ -151,20 +151,22 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 }
 
 func (j *JobProducer) Print() {
+	fmt.Println()
+
 	if j.dnsHist.Count > 0 {
-		println("DNS latency distribution in ms:")
-		println(j.dnsHist.String())
+		fmt.Println("DNS latency distribution in ms:")
+		fmt.Println(j.dnsHist.String())
 	}
 
 	if j.tlsHist.Count > 0 {
-		println("TLS handshake latency distribution in ms:")
-		println(j.tlsHist.String())
+		fmt.Println("TLS handshake latency distribution in ms:")
+		fmt.Println(j.tlsHist.String())
 	}
 
-	println("Connection latency distribution in ms:")
-	println(j.connHist.String())
+	fmt.Println("Connection latency distribution in ms:")
+	fmt.Println(j.connHist.String())
 
-	println("Responses by status code")
+	fmt.Println("Responses by status code")
 	j.mu.Lock()
 	codes := ""
 	resps := ""
@@ -173,12 +175,12 @@ func (j *JobProducer) Print() {
 		resps += fmt.Sprintf("[%d]\n%s\n", code, string(j.respBody[code]))
 	}
 	j.mu.Unlock()
-	println(codes)
+	fmt.Println(codes)
 
-	println("Bytes read", atomic.LoadInt64(&j.bytesRead))
-	println("Bytes written", atomic.LoadInt64(&j.bytesWritten))
+	fmt.Println("Bytes read", atomic.LoadInt64(&j.bytesRead))
+	fmt.Println("Bytes written", atomic.LoadInt64(&j.bytesWritten))
 
-	println(resps)
+	fmt.Println(resps)
 }
 
 func (j *JobProducer) Job(i int) (time.Duration, error) {
@@ -239,7 +241,11 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 		if err != nil {
 			println(err.Error())
 		}
-		j.respBody[resp.StatusCode] = body
+		if len(body) > 1000 {
+			j.respBody[resp.StatusCode] = append(body[0:1000], '.', '.', '.')
+		} else {
+			j.respBody[resp.StatusCode] = body
+		}
 	}
 	j.mu.Unlock()
 
