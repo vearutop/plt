@@ -241,7 +241,10 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 		if err != nil {
 			println(err.Error())
 		}
-		if len(body) > 1000 {
+
+		if resp.Header.Get("Content-Encoding") != "" {
+			j.respBody[resp.StatusCode] = []byte("<" + resp.Header.Get("Content-Encoding") + "-encoded-content>")
+		} else if len(body) > 1000 {
 			j.respBody[resp.StatusCode] = append(body[0:1000], '.', '.', '.')
 		} else {
 			j.respBody[resp.StatusCode] = body
