@@ -1,12 +1,10 @@
-package http
+package nethttp
 
 import (
 	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/vearutop/dynhist-go"
-	"github.com/vearutop/plt/loadgen"
 	"io"
 	"io/ioutil"
 	"log"
@@ -19,6 +17,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/vearutop/dynhist-go"
+	"github.com/vearutop/plt/loadgen"
 )
 
 type JobProducer struct {
@@ -270,4 +271,5 @@ type Flags struct {
 	Body        string
 	Method      string
 	NoKeepalive bool
+	Fast        bool
 }

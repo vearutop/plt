@@ -1,0 +1,192 @@
+package fasthttp
+
+import (
+	"fmt"
+	"log"
+	"net"
+	"net/url"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/valyala/fasthttp"
+	"github.com/vearutop/plt/loadgen"
+	"github.com/vearutop/plt/nethttp"
+)
+
+type JobProducer struct {
+	start time.Time
+
+	mu       sync.Mutex
+	respCode map[int]int
+	respBody map[int][]byte
+
+	bytesWritten int64
+	bytesRead    int64
+
+	body   []byte
+	f      nethttp.Flags
+	client *fasthttp.Client
+}
+
+func (j *JobProducer) RequestCounts() map[string]int {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	res := make(map[string]int, len(j.respCode))
+	for code, cnt := range j.respCode {
+		res[strconv.Itoa(code)] = cnt
+	}
+
+	return res
+}
+
+func (j *JobProducer) Metrics() map[string]map[string]float64 {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	elapsed := time.Since(j.start).Seconds()
+
+	res := map[string]map[string]float64{
+		"Bandwidth, MB/s": {
+			"Read":  float64(j.bytesRead) / (1024 * 1024 * elapsed),
+			"Write": float64(j.bytesWritten) / (1024 * 1024 * elapsed),
+		},
+	}
+
+	return res
+}
+
+type countingConn struct {
+	j *JobProducer
+	net.Conn
+}
+
+// Read reads data from the connection.
+// Read can be made to time out and return an Error with Timeout() == true
+// after a fixed time limit; see SetDeadline and SetReadDeadline.
+func (c countingConn) Read(b []byte) (n int, err error) {
+	n, err = c.Conn.Read(b)
+	atomic.AddInt64(&c.j.bytesRead, int64(n))
+	return n, err
+}
+
+// Write writes data to the connection.
+// Write can be made to time out and return an Error with Timeout() == true
+// after a fixed time limit; see SetDeadline and SetWriteDeadline.
+func (c countingConn) Write(b []byte) (n int, err error) {
+	n, err = c.Conn.Write(b)
+	atomic.AddInt64(&c.j.bytesWritten, int64(n))
+	return n, err
+}
+
+func NewJobProducer(f nethttp.Flags, lf loadgen.Flags) *JobProducer {
+	u, err := url.Parse(f.URL)
+	if err != nil {
+		log.Fatalf("failed to parse URL: %s", err)
+	}
+	addrs, err := net.LookupHost(u.Hostname())
+	if err != nil {
+		log.Fatalf("failed to resolve URL host: %s", err)
+	}
+	fmt.Println("Host resolved:", strings.Join(addrs, ","))
+
+	j := JobProducer{}
+
+	concurrencyLimit := lf.Concurrency // Number of simultaneous jobs.
+	if concurrencyLimit <= 0 {
+		concurrencyLimit = 50
+	}
+
+	j.respCode = make(map[int]int, 5)
+	j.respBody = make(map[int][]byte, 5)
+	j.f = f
+
+	if f.Body != "" {
+		j.body = []byte(f.Body)
+	}
+
+	j.client = &fasthttp.Client{}
+	j.client.Dial = func(addr string) (net.Conn, error) {
+		c, err := fasthttp.Dial(addr)
+		if err != nil {
+			return c, err
+		}
+		return countingConn{
+			j:    &j,
+			Conn: c,
+		}, nil
+	}
+
+	if _, ok := f.HeaderMap["User-Agent"]; !ok {
+		j.client.Name = "plt"
+	}
+
+	return &j
+}
+
+func (j *JobProducer) Print() {
+	fmt.Println()
+
+	fmt.Println("Responses by status code")
+	j.mu.Lock()
+	codes := ""
+	resps := ""
+	for code, cnt := range j.respCode {
+		codes += fmt.Sprintf("[%d] %d\n", code, cnt)
+		resps += fmt.Sprintf("[%d]\n%s\n", code, string(j.respBody[code]))
+	}
+	j.mu.Unlock()
+	fmt.Println(codes)
+
+	fmt.Println("Bytes read", atomic.LoadInt64(&j.bytesRead))
+	fmt.Println("Bytes written", atomic.LoadInt64(&j.bytesWritten))
+
+	fmt.Println(resps)
+}
+
+func (j *JobProducer) Job(i int) (time.Duration, error) {
+	start := time.Now()
+
+	req := fasthttp.AcquireRequest()
+	resp := fasthttp.AcquireResponse()
+
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(resp)
+
+	if j.body != nil {
+		req.SetBody(j.body)
+	}
+
+	req.Header.SetMethod(j.f.Method)
+	req.SetRequestURI(j.f.URL)
+	for k, v := range j.f.HeaderMap {
+		req.Header.Set(k, v)
+	}
+
+	err := j.client.Do(req, resp)
+	if err != nil {
+		return 0, err
+	}
+
+	si := time.Since(start)
+
+	j.mu.Lock()
+	j.respCode[resp.StatusCode()]++
+	if j.respCode[resp.StatusCode()] == 1 {
+		body := resp.Body()
+
+		if len(resp.Header.Peek("Content-Encoding")) > 0 {
+			j.respBody[resp.StatusCode()] = []byte("<" + string(resp.Header.Peek("Content-Encoding")) + "-encoded-content>")
+		} else if len(body) > 1000 {
+			j.respBody[resp.StatusCode()] = append(body[0:1000], '.', '.', '.')
+		} else {
+			j.respBody[resp.StatusCode()] = body
+		}
+	}
+	j.mu.Unlock()
+
+	return si, nil
+}

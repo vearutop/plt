@@ -6,8 +6,12 @@ import (
 	"github.com/vearutop/plt/loadgen"
 )
 
+var version = "dev"
+
 func main() {
 	kingpin.CommandLine.Help = "Pocket load tester pushes to the limit"
+
+	kingpin.Version(version)
 
 	lf := loadgen.Flags{}
 	kingpin.Flag("number", "Number of requests to run, 0 is infinite.").

@@ -41,6 +41,9 @@ Commands:
 
 You can "copy as cURL" in your browser and then prepend that with `plt` to throw 1000 of such requests. 
 
+For even better performance you can use `plt curl --fast` that will employ awesome [fasthttp](https://github.com/valyala/fasthttp)
+as transport. This mode lacks detailed breakdown of latencies, but can push request rate to the limit.
+
 ## Example
 
 ```bash
@@ -110,4 +113,41 @@ Bytes read 1667316
 Bytes written 643177
 [200]
 Welcome to acme-dummy-service. Please read API <a href="/docs/">documentation</a>.
+```
+
+### Fast mode
+
+```
+plt --concurrency 100 --number 200000 curl --fast -X GET "http://localhost:8011/v0/tasks/1" -H  "accept: application/json"
+Host resolved: 127.0.0.1
+Requests per second: 145232.05
+Total requests: 200000
+Request latency distribution in ms:
+[  min   max]    cnt total% (200000 events)
+[ 0.06  0.06]      1  0.00%
+[ 0.06  0.06]      7  0.00%
+[ 0.06  0.08]    716  0.36%
+[ 0.08  0.10]   5050  2.52% ..
+[ 0.10  0.14]  19661  9.83% .........
+[ 0.14  0.48] 109190 54.59% ......................................................
+[ 0.48  1.07]  46129 23.06% .......................
+[ 1.07  2.91]   9715  4.86% ....
+[ 2.91 16.01]   9516  4.76% ....
+[16.11 23.96]     15  0.01%
+
+Request latency percentiles:
+99%: 7.212116ms
+95%: 2.914069ms
+90%: 1.063058ms
+50%: 0.336996ms
+
+Requests with latency more than 1s: 0
+
+Responses by status code
+[200] 200000
+
+Bytes read 83600000
+Bytes written 18600000
+[200]
+{"id":1,"goal":"enjoy!","deadline":"2020-05-24T21:00:54.998Z","createdAt":"2020-05-24T23:00:56.656017059+02:00"}
 ```

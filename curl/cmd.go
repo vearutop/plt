@@ -3,19 +3,20 @@ package curl
 import (
 	"encoding/base64"
 	"errors"
-	http2 "github.com/vearutop/plt/http"
 	"log"
 	"net/http"
 	"regexp"
 	"strings"
 
 	"github.com/alecthomas/kingpin"
+	"github.com/vearutop/plt/fasthttp"
 	"github.com/vearutop/plt/loadgen"
+	"github.com/vearutop/plt/nethttp"
 )
 
 func AddCommand(lf *loadgen.Flags) {
 	var (
-		flags   http2.Flags
+		flags   nethttp.Flags
 		capture struct {
 			header     []string
 			data       []string
@@ -41,6 +42,7 @@ func AddCommand(lf *loadgen.Flags) {
 
 	curl := kingpin.Command("curl", "Repetitive HTTP transfer")
 
+	curl.Flag("fast", "Use fasthttp to achieve higher request rate").BoolVar(&flags.Fast)
 	curl.Flag("2.0", `Workaround of Firefox "Copy as cURL" incompatibility.`).Bool()
 	curl.Arg("url", "The URL.").StringVar(&flags.URL)
 
@@ -57,12 +59,12 @@ func AddCommand(lf *loadgen.Flags) {
 		desc := strings.Trim(m[4], "")
 
 		// help is already defined by kingpin.
-		if long == "help" {
+		if long == "help" || long == "version" {
 			continue
 		}
 
 		if long != "header" && captureString[long] == nil && captureBool[long] == nil {
-			desc = desc + " (flag ignoredString)"
+			desc = desc + " (flag ignored)"
 		}
 
 		f := curl.Flag(long, desc+".")
@@ -147,8 +149,14 @@ func AddCommand(lf *loadgen.Flags) {
 	})
 }
 
-func run(lf loadgen.Flags, f http2.Flags) {
-	j := http2.NewJobProducer(f, lf)
-	loadgen.Run(lf, j)
-	j.Print()
+func run(lf loadgen.Flags, f nethttp.Flags) {
+	if f.Fast {
+		j := fasthttp.NewJobProducer(f, lf)
+		loadgen.Run(lf, j)
+		j.Print()
+	} else {
+		j := nethttp.NewJobProducer(f, lf)
+		loadgen.Run(lf, j)
+		j.Print()
+	}
 }
