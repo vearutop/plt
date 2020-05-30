@@ -1,3 +1,4 @@
+// Package fasthttp implements http load generator with fasthttp transport.
 package fasthttp
 
 import (
@@ -12,10 +13,10 @@ import (
 	"time"
 
 	"github.com/valyala/fasthttp"
-	"github.com/vearutop/plt/loadgen"
 	"github.com/vearutop/plt/nethttp"
 )
 
+// JobProducer sends HTTP requests.
 type JobProducer struct {
 	start time.Time
 
@@ -31,6 +32,7 @@ type JobProducer struct {
 	client *fasthttp.Client
 }
 
+// RequestCounts returns distribution by status code.
 func (j *JobProducer) RequestCounts() map[string]int {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -43,6 +45,7 @@ func (j *JobProducer) RequestCounts() map[string]int {
 	return res
 }
 
+// Metrics return additional stats.
 func (j *JobProducer) Metrics() map[string]map[string]float64 {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -70,6 +73,7 @@ type countingConn struct {
 func (c countingConn) Read(b []byte) (n int, err error) {
 	n, err = c.Conn.Read(b)
 	atomic.AddInt64(&c.j.bytesRead, int64(n))
+
 	return n, err
 }
 
@@ -79,26 +83,25 @@ func (c countingConn) Read(b []byte) (n int, err error) {
 func (c countingConn) Write(b []byte) (n int, err error) {
 	n, err = c.Conn.Write(b)
 	atomic.AddInt64(&c.j.bytesWritten, int64(n))
+
 	return n, err
 }
 
-func NewJobProducer(f nethttp.Flags, lf loadgen.Flags) *JobProducer {
+// NewJobProducer creates load generator.
+func NewJobProducer(f nethttp.Flags) *JobProducer {
 	u, err := url.Parse(f.URL)
 	if err != nil {
 		log.Fatalf("failed to parse URL: %s", err)
 	}
+
 	addrs, err := net.LookupHost(u.Hostname())
 	if err != nil {
 		log.Fatalf("failed to resolve URL host: %s", err)
 	}
+
 	fmt.Println("Host resolved:", strings.Join(addrs, ","))
 
 	j := JobProducer{}
-
-	concurrencyLimit := lf.Concurrency // Number of simultaneous jobs.
-	if concurrencyLimit <= 0 {
-		concurrencyLimit = 50
-	}
 
 	j.respCode = make(map[int]int, 5)
 	j.respBody = make(map[int][]byte, 5)
@@ -114,6 +117,7 @@ func NewJobProducer(f nethttp.Flags, lf loadgen.Flags) *JobProducer {
 		if err != nil {
 			return c, err
 		}
+
 		return countingConn{
 			j:    &j,
 			Conn: c,
@@ -127,6 +131,7 @@ func NewJobProducer(f nethttp.Flags, lf loadgen.Flags) *JobProducer {
 	return &j
 }
 
+// Print reports results.
 func (j *JobProducer) Print() {
 	fmt.Println()
 
@@ -134,10 +139,12 @@ func (j *JobProducer) Print() {
 	j.mu.Lock()
 	codes := ""
 	resps := ""
+
 	for code, cnt := range j.respCode {
 		codes += fmt.Sprintf("[%d] %d\n", code, cnt)
 		resps += fmt.Sprintf("[%d]\n%s\n", code, string(j.respBody[code]))
 	}
+
 	j.mu.Unlock()
 	fmt.Println(codes)
 
@@ -147,7 +154,8 @@ func (j *JobProducer) Print() {
 	fmt.Println(resps)
 }
 
-func (j *JobProducer) Job(i int) (time.Duration, error) {
+// Job sends a single http request.
+func (j *JobProducer) Job(_ int) (time.Duration, error) {
 	start := time.Now()
 
 	req := fasthttp.AcquireRequest()
@@ -162,6 +170,7 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 
 	req.Header.SetMethod(j.f.Method)
 	req.SetRequestURI(j.f.URL)
+
 	for k, v := range j.f.HeaderMap {
 		req.Header.Set(k, v)
 	}
@@ -175,14 +184,16 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 
 	j.mu.Lock()
 	j.respCode[resp.StatusCode()]++
+
 	if j.respCode[resp.StatusCode()] == 1 {
 		body := resp.Body()
 
-		if len(resp.Header.Peek("Content-Encoding")) > 0 {
+		switch {
+		case len(resp.Header.Peek("Content-Encoding")) > 0:
 			j.respBody[resp.StatusCode()] = []byte("<" + string(resp.Header.Peek("Content-Encoding")) + "-encoded-content>")
-		} else if len(body) > 1000 {
+		case len(body) > 1000:
 			j.respBody[resp.StatusCode()] = append(body[0:1000], '.', '.', '.')
-		} else {
+		default:
 			j.respBody[resp.StatusCode()] = body
 		}
 	}

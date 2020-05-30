@@ -1,3 +1,4 @@
+// Package curl implements curl command line interface.
 package curl
 
 import (
@@ -14,6 +15,7 @@ import (
 	"github.com/vearutop/plt/nethttp"
 )
 
+// AddCommand registers curl command into CLI app.
 func AddCommand(lf *loadgen.Flags) {
 	var (
 		flags   nethttp.Flags
@@ -47,6 +49,7 @@ func AddCommand(lf *loadgen.Flags) {
 	curl.Arg("url", "The URL.").StringVar(&flags.URL)
 
 	reg := regexp.MustCompile(`(?P<Short>-[\w],)?\s--(?P<Long>[\w\-.]+)(?P<Arg>\s[^\s]+)?\s+(?P<Desc>.+)$`)
+
 	for _, line := range strings.Split(curlHelp, "\n") {
 		m := reg.FindStringSubmatch(line)
 		if len(m) == 0 {
@@ -64,12 +67,20 @@ func AddCommand(lf *loadgen.Flags) {
 		}
 
 		if long != "header" && captureString[long] == nil && captureBool[long] == nil {
-			desc = desc + " (flag ignored)"
+			desc += " (flag ignored)"
 		}
 
 		f := curl.Flag(long, desc+".")
 
-		if arg != "" {
+		emptyArg := func() {
+			if b, ok := captureBool[long]; ok {
+				f.BoolVar(b)
+			} else {
+				ignoredBool[long] = f.Bool()
+			}
+		}
+
+		nonEmptyArg := func() {
 			if ss, ok := captureStrings[long]; ok {
 				f.StringsVar(ss)
 			} else {
@@ -81,12 +92,12 @@ func AddCommand(lf *loadgen.Flags) {
 			}
 
 			f.PlaceHolder(arg)
+		}
+
+		if arg != "" {
+			nonEmptyArg()
 		} else {
-			if b, ok := captureBool[long]; ok {
-				f.BoolVar(b)
-			} else {
-				ignoredBool[long] = f.Bool()
-			}
+			emptyArg()
 		}
 
 		if short != "" {
@@ -118,7 +129,7 @@ func AddCommand(lf *loadgen.Flags) {
 
 		flags.HeaderMap = make(map[string]string, len(capture.header))
 		if capture.user != "" {
-			if strings.Index(capture.user, ":") == -1 {
+			if !strings.Contains(capture.user, ":") {
 				return errors.New("user parameter must be in form user:pass")
 			}
 			flags.HeaderMap["Authorization"] = "Basic " + base64.StdEncoding.EncodeToString([]byte(capture.user))
@@ -151,7 +162,7 @@ func AddCommand(lf *loadgen.Flags) {
 
 func run(lf loadgen.Flags, f nethttp.Flags) {
 	if f.Fast {
-		j := fasthttp.NewJobProducer(f, lf)
+		j := fasthttp.NewJobProducer(f)
 		loadgen.Run(lf, j)
 		j.Print()
 	} else {

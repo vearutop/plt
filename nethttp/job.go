@@ -1,3 +1,4 @@
+// Package nethttp implements HTTP load producer with net/http.
 package nethttp
 
 import (
@@ -22,6 +23,7 @@ import (
 	"github.com/vearutop/plt/loadgen"
 )
 
+// JobProducer sends HTTP requests.
 type JobProducer struct {
 	start time.Time
 
@@ -40,16 +42,20 @@ type JobProducer struct {
 	tr *http.Transport
 }
 
+// RequestCounts returns distribution by status code.
 func (j *JobProducer) RequestCounts() map[string]int {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+
 	res := make(map[string]int, len(j.respCode))
 	for code, cnt := range j.respCode {
 		res[strconv.Itoa(code)] = cnt
 	}
+
 	return res
 }
 
+// Metrics return additional stats.
 func (j *JobProducer) Metrics() map[string]map[string]float64 {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -77,6 +83,7 @@ type countingConn struct {
 func (c countingConn) Read(b []byte) (n int, err error) {
 	n, err = c.Conn.Read(b)
 	atomic.AddInt64(&c.j.bytesRead, int64(n))
+
 	return n, err
 }
 
@@ -86,6 +93,7 @@ func (c countingConn) Read(b []byte) (n int, err error) {
 func (c countingConn) Write(b []byte) (n int, err error) {
 	n, err = c.Conn.Write(b)
 	atomic.AddInt64(&c.j.bytesWritten, int64(n))
+
 	return n, err
 }
 
@@ -108,6 +116,7 @@ func (j *JobProducer) makeTransport() *http.Transport {
 		if err != nil {
 			return c, err
 		}
+
 		return countingConn{
 			j:    j,
 			Conn: c,
@@ -117,15 +126,18 @@ func (j *JobProducer) makeTransport() *http.Transport {
 	return t
 }
 
+// NewJobProducer creates HTTP load generator.
 func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 	u, err := url.Parse(f.URL)
 	if err != nil {
 		log.Fatalf("failed to parse URL: %s", err)
 	}
+
 	addrs, err := net.LookupHost(u.Hostname())
 	if err != nil {
 		log.Fatalf("failed to resolve URL host: %s", err)
 	}
+
 	fmt.Println("Host resolved:", strings.Join(addrs, ","))
 
 	j := JobProducer{}
@@ -134,6 +146,7 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 	if concurrencyLimit <= 0 {
 		concurrencyLimit = 50
 	}
+
 	j.tr = j.makeTransport()
 	j.tr.MaxIdleConnsPerHost = concurrencyLimit
 
@@ -151,6 +164,7 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 	return &j
 }
 
+// Print prints results.
 func (j *JobProducer) Print() {
 	fmt.Println()
 
@@ -171,6 +185,7 @@ func (j *JobProducer) Print() {
 	j.mu.Lock()
 	codes := ""
 	resps := ""
+
 	for code, cnt := range j.respCode {
 		codes += fmt.Sprintf("[%d] %d\n", code, cnt)
 		resps += fmt.Sprintf("[%d]\n%s\n", code, string(j.respBody[code]))
@@ -184,21 +199,26 @@ func (j *JobProducer) Print() {
 	fmt.Println(resps)
 }
 
-func (j *JobProducer) Job(i int) (time.Duration, error) {
+// Job runs single item of load.
+func (j *JobProducer) Job(_ int) (time.Duration, error) {
 	start := time.Now()
+
 	var dnsStart, connStart, tlsStart time.Time
 
 	var body io.Reader
 	if j.f.Body != "" {
 		body = bytes.NewBufferString(j.f.Body)
 	}
+
 	req, err := http.NewRequest(j.f.Method, j.f.URL, body)
 	if err != nil {
 		return 0, err
 	}
+
 	for k, v := range j.f.HeaderMap {
 		req.Header.Set(k, v)
 	}
+
 	trace := &httptrace.ClientTrace{
 		DNSStart: func(info httptrace.DNSStartInfo) {
 			dnsStart = time.Now()
@@ -233,30 +253,35 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	si := time.Since(start)
 
 	j.mu.Lock()
 	j.respCode[resp.StatusCode]++
+
 	if j.respCode[resp.StatusCode] == 1 {
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			println(err.Error())
 		}
 
-		if resp.Header.Get("Content-Encoding") != "" {
+		switch {
+		case resp.Header.Get("Content-Encoding") != "":
 			j.respBody[resp.StatusCode] = []byte("<" + resp.Header.Get("Content-Encoding") + "-encoded-content>")
-		} else if len(body) > 1000 {
+		case len(body) > 1000:
 			j.respBody[resp.StatusCode] = append(body[0:1000], '.', '.', '.')
-		} else {
+		default:
 			j.respBody[resp.StatusCode] = body
 		}
 	}
+
 	j.mu.Unlock()
 
 	_, err = io.Copy(ioutil.Discard, resp.Body)
 	if err != nil {
 		println(err.Error())
 	}
+
 	err = resp.Body.Close()
 	if err != nil {
 		println(err.Error())
@@ -265,6 +290,7 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 	return si, nil
 }
 
+// Flags control HTTP load setup.
 type Flags struct {
 	HeaderMap   map[string]string
 	URL         string
