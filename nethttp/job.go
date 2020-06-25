@@ -109,6 +109,7 @@ func (j *JobProducer) makeTransport() *http.Transport {
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
+		DisableCompression:    true,
 	}
 
 	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -297,5 +298,6 @@ type Flags struct {
 	Body        string
 	Method      string
 	NoKeepalive bool
+	Compressed  bool
 	Fast        bool
 }
