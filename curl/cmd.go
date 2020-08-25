@@ -26,8 +26,12 @@ func AddCommand(lf *loadgen.Flags) {
 			user       string
 		}
 		captureStrings = map[string]*[]string{
-			"header": &capture.header,
-			"data":   &capture.data,
+			"header":         &capture.header,
+			"data":           &capture.data,
+			"data-raw":       &capture.data,
+			"data-ascii":     &capture.data,
+			"data-binary":    &capture.data,
+			"data-urlencode": &capture.data,
 		}
 		captureString = map[string]*string{
 			"url":     &flags.URL,
@@ -137,6 +141,10 @@ func AddCommand(lf *loadgen.Flags) {
 
 		if flags.Body != "" {
 			flags.HeaderMap["Content-Type"] = "application/x-www-form-urlencoded"
+
+			if flags.Method == "" {
+				flags.Method = http.MethodPost
+			}
 		}
 
 		for _, h := range capture.header {
