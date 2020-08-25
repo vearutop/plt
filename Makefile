@@ -13,7 +13,7 @@ build:
 	@GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=$(VERSION)" -o build/plt-linux-amd64 plt.go && gzip -f build/plt-linux-amd64
 	@echo ">> building binaries - windows_amd64"
 	@GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.version=$(VERSION)" -o build/plt-windows-amd64.exe plt.go \
-		&& zip -9 -D build/plt-windows-amd64.zip build/plt-windows-amd64.exe && rm build/plt-windows-amd64.exe
+		&& zip -9 -j build/plt-windows-amd64.zip build/plt-windows-amd64.exe && rm build/plt-windows-amd64.exe
 	@echo ">> building binaries - alpine_amd64"
 	@docker run --rm -v $(PWD):/app -w /app golang:1.15-alpine go build -ldflags="-s -w -X main.version=$(VERSION)" -o build/plt-alpine-amd64 \
 		&& gzip -f build/plt-alpine-amd64
