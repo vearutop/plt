@@ -30,6 +30,10 @@ type JobProducer struct {
 	dnsHist  *dynhist.Collector
 	connHist *dynhist.Collector
 	tlsHist  *dynhist.Collector
+
+	upstreamHist        *dynhist.Collector
+	upstreamHistPrecise *dynhist.Collector
+
 	mu       sync.Mutex
 	respCode map[int]int
 	respBody map[int][]byte
@@ -154,6 +158,8 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 	j.dnsHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	j.connHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	j.tlsHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
+	j.upstreamHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
+	j.upstreamHistPrecise = &dynhist.Collector{BucketsLimit: 100, WeightFunc: dynhist.LatencyWidth}
 	j.respCode = make(map[int]int, 5)
 	j.respBody = make(map[int][]byte, 5)
 	j.f = f
@@ -177,6 +183,17 @@ func (j *JobProducer) Print() {
 	if j.tlsHist.Count > 0 {
 		fmt.Println("TLS handshake latency distribution in ms:")
 		fmt.Println(j.tlsHist.String())
+	}
+
+	if j.upstreamHist.Count > 0 {
+		fmt.Println("Envoy upstream latency percentiles:")
+		fmt.Printf("99%%: %fms\n", j.upstreamHistPrecise.Percentile(99))
+		fmt.Printf("95%%: %fms\n", j.upstreamHistPrecise.Percentile(95))
+		fmt.Printf("90%%: %fms\n", j.upstreamHistPrecise.Percentile(90))
+		fmt.Printf("50%%: %fms\n\n", j.upstreamHistPrecise.Percentile(50))
+
+		fmt.Println("Envoy upstream latency distribution in ms:")
+		fmt.Println(j.upstreamHist.String())
 	}
 
 	fmt.Println("Connection latency distribution in ms:")
@@ -259,6 +276,14 @@ func (j *JobProducer) Job(_ int) (time.Duration, error) {
 
 	j.mu.Lock()
 	j.respCode[resp.StatusCode]++
+
+	if envoyUpstreamMS := resp.Header.Get("X-Envoy-Upstream-Service-Time"); envoyUpstreamMS != "" {
+		ms, err := strconv.Atoi(envoyUpstreamMS)
+		if err == nil {
+			j.upstreamHist.Add(float64(ms))
+			j.upstreamHistPrecise.Add(float64(ms))
+		}
+	}
 
 	if j.respCode[resp.StatusCode] == 1 {
 		body, err := ioutil.ReadAll(resp.Body)
