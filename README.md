@@ -7,7 +7,7 @@ Scale curl requests, cousin of `ab`, `siege`, [`hey`](https://github.com/rakyll/
 ![Code lines](https://sloc.xyz/github/vearutop/plt/?category=code)
 ![Comments](https://sloc.xyz/github/vearutop/plt/?category=comments)
 
-![plt](https://user-images.githubusercontent.com/1381436/73143999-dd4d5800-40a0-11ea-9308-8e02773ec2d6.gif)
+![Demo](./demo.svg)
 
 ## Install
 
@@ -53,6 +53,8 @@ For even better performance you can use `plt curl --fast` that will employ aweso
 as transport. This mode lacks detailed breakdown of latencies, but can push request rate to the limit.
 
 If the server is wrapped with Envoy proxy, upstream latency distribution will be collected from the values of [`X-Envoy-Upstream-Service-Time`](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/router_filter#x-envoy-upstream-service-time) response header.
+
+In `--live-ui` mode you can control concurrency and rate limits with arrow keys.
 
 ## Example
 
