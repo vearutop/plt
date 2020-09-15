@@ -14,7 +14,7 @@ Scale curl requests, cousin of `ab`, `siege`, [`hey`](https://github.com/rakyll/
 ## Install
 
 ```
-go get -u github.com/vearutop/plt@latest
+go get -u github.com/vearutop/plt
 ```
 
 Or 
