@@ -38,6 +38,7 @@ type runner struct {
 	mu               sync.Mutex
 	concurrencyLimit int64
 	rateLimit        int64
+	currentReqRate   int64
 	rl               *rate.Limiter
 }
 
@@ -81,7 +82,7 @@ func Run(lf Flags, jobProducer JobProducer) {
 
 	if lf.RateLimit > 0 {
 		r.rateLimit = int64(lf.RateLimit)
-		r.rl = rate.NewLimiter(rate.Limit(lf.RateLimit), int(r.concurrencyLimit))
+		r.rl = rate.NewLimiter(rate.Limit(lf.RateLimit), 1)
 	}
 
 	r.exit = make(chan os.Signal, 1)
@@ -97,10 +98,21 @@ func Run(lf Flags, jobProducer JobProducer) {
 					return
 				}
 
-				rl := rate.NewLimiter(rate.Limit(lim), int(atomic.LoadInt64(&r.concurrencyLimit)))
+				rl := rate.NewLimiter(rate.Limit(lim), 1)
+
 				r.mu.Lock()
 				r.rl = rl
 				r.mu.Unlock()
+			}
+
+			rateLimit := func() int64 {
+				lim := atomic.LoadInt64(&r.rateLimit)
+
+				if lim == 0 {
+					lim = atomic.LoadInt64(&r.currentReqRate)
+				}
+
+				return lim
 			}
 
 			uiEvents := ui.PollEvents()
@@ -118,7 +130,6 @@ func Run(lf Flags, jobProducer JobProducer) {
 						for i := int64(0); i < delta; i++ {
 							<-limiter
 						}
-						refreshRateLimiter()
 					}
 				case "<Left>": // Decrease concurrency.
 					lim := atomic.LoadInt64(&r.concurrencyLimit)
@@ -132,18 +143,16 @@ func Run(lf Flags, jobProducer JobProducer) {
 						}
 					}
 
-					refreshRateLimiter()
-
 				case "<Up>": // Increase rate limit.
-					lim := atomic.LoadInt64(&r.rateLimit)
+					lim := rateLimit()
 					delta := int64(0.05 * float64(lim))
-					atomic.AddInt64(&r.rateLimit, delta)
+					atomic.StoreInt64(&r.rateLimit, lim+delta)
 					refreshRateLimiter()
 
 				case "<Down>": // Decrease rate limit.
-					lim := atomic.LoadInt64(&r.rateLimit)
+					lim := rateLimit()
 					delta := int64(0.05 * float64(lim))
-					atomic.AddInt64(&r.rateLimit, -delta)
+					atomic.StoreInt64(&r.rateLimit, lim-delta)
 					refreshRateLimiter()
 				}
 			}
@@ -211,7 +220,7 @@ func Run(lf Flags, jobProducer JobProducer) {
 	fmt.Println()
 	fmt.Println("Requests per second:", fmt.Sprintf("%.2f", float64(r.roundTripHist.Count)/time.Since(r.start).Seconds()))
 	fmt.Println("Total requests:", r.roundTripHist.Count)
-	fmt.Println("Time spent:", time.Since(r.start))
+	fmt.Println("Time spent:", time.Since(r.start).Round(time.Millisecond))
 
 	fmt.Println()
 	fmt.Println("Request latency percentiles:")
@@ -239,7 +248,8 @@ func (r *runner) runLiveUI() {
 	latencyPlot.Data = [][]float64{0: {}, 1: {}}
 	latencyPlot.HorizontalScale = 2
 
-	ticker := time.NewTicker(500 * time.Millisecond).C
+	tickerDuration := 500 * time.Millisecond
+	ticker := time.NewTicker(tickerDuration).C
 
 	prev := time.Now()
 	reqPrev := 0
@@ -262,6 +272,8 @@ func (r *runner) runLiveUI() {
 		reqRateTick := float64(reqNum-reqPrev) / elaTick.Seconds()
 		reqPrev = reqNum
 		prev = time.Now()
+
+		atomic.StoreInt64(&r.currentReqRate, int64(reqRateTick))
 
 		latencyPercentiles := widgets.NewParagraph()
 		latencyPercentiles.Title = "Round trip latency, ms"
@@ -325,7 +337,7 @@ func (r *runner) runLiveUI() {
 			reqRate,
 			reqRateTick,
 			r.roundTripHist.Count,
-			elaDur.String(),
+			elaDur.Round(tickerDuration).String(),
 		)
 
 		latencyPlot.Data[0] = append(latencyPlot.Data[0], r.roundTripRolling.Min)
