@@ -7,6 +7,8 @@ Scale curl requests, cousin of `ab`, `siege`, [`hey`](https://github.com/rakyll/
 ![Code lines](https://sloc.xyz/github/vearutop/plt/?category=code)
 ![Comments](https://sloc.xyz/github/vearutop/plt/?category=comments)
 
+## Demo
+
 ![Demo](./demo.svg)
 
 ## Install
