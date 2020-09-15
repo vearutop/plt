@@ -95,8 +95,10 @@ func Run(lf Flags, jobProducer JobProducer) {
 				case "<Right>": // Increase concurrency.
 					lim := atomic.LoadInt64(&r.concurrencyLimit)
 					delta := int64(0.05 * float64(lim))
+
 					if lim+delta <= maxConcurrency {
 						atomic.AddInt64(&r.concurrencyLimit, delta)
+
 						for i := int64(0); i < delta; i++ {
 							<-limiter
 						}
@@ -104,8 +106,10 @@ func Run(lf Flags, jobProducer JobProducer) {
 				case "<Left>": // Decrease concurrency.
 					lim := atomic.LoadInt64(&r.concurrencyLimit)
 					delta := int64(0.05 * float64(lim))
+
 					if lim-delta > 0 {
 						atomic.AddInt64(&r.concurrencyLimit, -delta)
+
 						for i := int64(0); i < delta; i++ {
 							limiter <- struct{}{}
 						}
