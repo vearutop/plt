@@ -1,8 +1,7 @@
 package curl
 
-var (
-	// curlHelp is a `curl --help` body as of curl 7.54.0.
-	curlHelp = ` --anyauth       Pick "any" authentication method (H)
+// curlHelp is a `curl --help` body as of curl 7.54.0.
+var curlHelp = ` --anyauth       Pick "any" authentication method (H)
  -a, --append        Append to target file when uploading (F/SFTP)
      --basic         Use HTTP Basic Authentication (H)
      --cacert FILE   CA certificate to verify peer against (SSL)
@@ -209,4 +208,3 @@ var (
  -w, --write-out FORMAT  Use output FORMAT after completion
      --xattr         Store metadata in extended file attributes
  -q, --disable       Disable .curlrc (must be first parameter)`
-)

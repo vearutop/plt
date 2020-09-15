@@ -175,6 +175,17 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 func (j *JobProducer) Print() {
 	fmt.Println()
 
+	if j.upstreamHist.Count > 0 {
+		fmt.Println("Envoy upstream latency percentiles:")
+		fmt.Printf("99%%: %.0fms\n", j.upstreamHistPrecise.Percentile(99))
+		fmt.Printf("95%%: %.0fms\n", j.upstreamHistPrecise.Percentile(95))
+		fmt.Printf("90%%: %.0fms\n", j.upstreamHistPrecise.Percentile(90))
+		fmt.Printf("50%%: %.0fms\n\n", j.upstreamHistPrecise.Percentile(50))
+
+		fmt.Println("Envoy upstream latency distribution in ms:")
+		fmt.Println(j.upstreamHist.String())
+	}
+
 	if j.dnsHist.Count > 0 {
 		fmt.Println("DNS latency distribution in ms:")
 		fmt.Println(j.dnsHist.String())
@@ -183,17 +194,6 @@ func (j *JobProducer) Print() {
 	if j.tlsHist.Count > 0 {
 		fmt.Println("TLS handshake latency distribution in ms:")
 		fmt.Println(j.tlsHist.String())
-	}
-
-	if j.upstreamHist.Count > 0 {
-		fmt.Println("Envoy upstream latency percentiles:")
-		fmt.Printf("99%%: %fms\n", j.upstreamHistPrecise.Percentile(99))
-		fmt.Printf("95%%: %fms\n", j.upstreamHistPrecise.Percentile(95))
-		fmt.Printf("90%%: %fms\n", j.upstreamHistPrecise.Percentile(90))
-		fmt.Printf("50%%: %fms\n\n", j.upstreamHistPrecise.Percentile(50))
-
-		fmt.Println("Envoy upstream latency distribution in ms:")
-		fmt.Println(j.upstreamHist.String())
 	}
 
 	fmt.Println("Connection latency distribution in ms:")

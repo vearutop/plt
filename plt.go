@@ -1,8 +1,6 @@
 package main
 
 import (
-	"time"
-
 	"github.com/alecthomas/kingpin"
 	"github.com/vearutop/plt/curl"
 	"github.com/vearutop/plt/loadgen"
@@ -31,9 +29,4 @@ func main() {
 	curl.AddCommand(&lf)
 
 	kingpin.Parse()
-
-	if lf.Number == 0 && lf.Duration == 0 {
-		lf.Number = 1000
-		lf.Duration = time.Minute
-	}
 }

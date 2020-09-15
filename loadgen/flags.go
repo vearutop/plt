@@ -11,3 +11,11 @@ type Flags struct {
 	SlowResponse time.Duration
 	LiveUI       bool
 }
+
+// Prepare sets conditional defaults.
+func (lf *Flags) Prepare() {
+	if lf.Number == 0 && lf.Duration == 0 {
+		lf.Number = 1000
+		lf.Duration = time.Minute
+	}
+}

@@ -169,6 +169,8 @@ func AddCommand(lf *loadgen.Flags) {
 }
 
 func run(lf loadgen.Flags, f nethttp.Flags) {
+	lf.Prepare()
+
 	if f.Fast {
 		j := fasthttp.NewJobProducer(f)
 		loadgen.Run(lf, j)

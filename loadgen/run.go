@@ -19,7 +19,10 @@ import (
 	"golang.org/x/time/rate"
 )
 
-const plotTailSize = 48
+const (
+	plotTailSize   = 48
+	maxConcurrency = 1000
+)
 
 type runner struct {
 	start time.Time
@@ -30,6 +33,8 @@ type runner struct {
 	roundTripPrecise dynhist.Collector
 
 	jobProducer JobProducer
+
+	concurrencyLimit int64
 }
 
 // Run runs load testing.
@@ -47,12 +52,15 @@ func Run(lf Flags, jobProducer JobProducer) {
 		roundTripPrecise: dynhist.Collector{BucketsLimit: 100, WeightFunc: dynhist.LatencyWidth},
 	}
 
-	concurrencyLimit := lf.Concurrency // Number of simultaneous jobs.
-	if concurrencyLimit <= 0 {
-		concurrencyLimit = 50
+	r.concurrencyLimit = int64(lf.Concurrency) // Number of simultaneous jobs.
+	if r.concurrencyLimit <= 0 {
+		r.concurrencyLimit = 50
 	}
 
-	limiter := make(chan struct{}, concurrencyLimit)
+	limiter := make(chan struct{}, maxConcurrency)
+	for i := 0; int64(i) < maxConcurrency-r.concurrencyLimit; i++ {
+		limiter <- struct{}{}
+	}
 
 	r.start = time.Now()
 	slow := expvar.Int{}
@@ -69,7 +77,7 @@ func Run(lf Flags, jobProducer JobProducer) {
 
 	var rl *rate.Limiter
 	if lf.RateLimit > 0 {
-		rl = rate.NewLimiter(rate.Limit(lf.RateLimit), concurrencyLimit)
+		rl = rate.NewLimiter(rate.Limit(lf.RateLimit), int(r.concurrencyLimit))
 	}
 
 	r.exit = make(chan os.Signal, 1)
@@ -84,6 +92,24 @@ func Run(lf Flags, jobProducer JobProducer) {
 				switch e.ID {
 				case "q", "<C-c>":
 					r.exit <- os.Interrupt
+				case "<Right>": // Increase concurrency.
+					lim := atomic.LoadInt64(&r.concurrencyLimit)
+					delta := int64(0.05 * float64(lim))
+					if lim+delta <= maxConcurrency {
+						atomic.AddInt64(&r.concurrencyLimit, delta)
+						for i := int64(0); i < delta; i++ {
+							<-limiter
+						}
+					}
+				case "<Left>": // Decrease concurrency.
+					lim := atomic.LoadInt64(&r.concurrencyLimit)
+					delta := int64(0.05 * float64(lim))
+					if lim-delta > 0 {
+						atomic.AddInt64(&r.concurrencyLimit, -delta)
+						for i := int64(0); i < delta; i++ {
+							limiter <- struct{}{}
+						}
+					}
 				}
 			}
 		}()
@@ -135,7 +161,7 @@ func Run(lf Flags, jobProducer JobProducer) {
 	}
 
 	// Wait for goroutines to finish by filling full channel.
-	for i := 0; i < cap(limiter); i++ {
+	for i := 0; int64(i) < atomic.LoadInt64(&r.concurrencyLimit); i++ {
 		limiter <- struct{}{}
 	}
 
@@ -143,15 +169,21 @@ func Run(lf Flags, jobProducer JobProducer) {
 		ui.Close()
 	}
 
+	fmt.Println()
 	fmt.Println("Requests per second:", fmt.Sprintf("%.2f", float64(r.roundTripHist.Count)/time.Since(r.start).Seconds()))
 	fmt.Println("Total requests:", r.roundTripHist.Count)
+	fmt.Println("Time spent:", time.Since(r.start))
+
+	fmt.Println()
+	fmt.Println("Request latency percentiles:")
+	fmt.Printf("99%%: %.2fms\n", r.roundTripPrecise.Percentile(99))
+	fmt.Printf("95%%: %.2fms\n", r.roundTripPrecise.Percentile(95))
+	fmt.Printf("90%%: %.2fms\n", r.roundTripPrecise.Percentile(90))
+	fmt.Printf("50%%: %.2fms\n\n", r.roundTripPrecise.Percentile(50))
+
 	fmt.Println("Request latency distribution in ms:")
 	fmt.Println(r.roundTripHist.String())
-	fmt.Println("Request latency percentiles:")
-	fmt.Printf("99%%: %fms\n", r.roundTripPrecise.Percentile(99))
-	fmt.Printf("95%%: %fms\n", r.roundTripPrecise.Percentile(95))
-	fmt.Printf("90%%: %fms\n", r.roundTripPrecise.Percentile(90))
-	fmt.Printf("50%%: %fms\n\n", r.roundTripPrecise.Percentile(50))
+
 	fmt.Println("Requests with latency more than "+lf.SlowResponse.String()+":", slow.Value())
 }
 
@@ -187,11 +219,11 @@ func (r *runner) runLiveUI() {
 		latencyPercentiles.Title = "Round trip latency, ms"
 		latencyPercentiles.Text = ""
 
-		latencyPercentiles.Text += fmt.Sprintf("100%%: %fms\n", r.roundTripPrecise.Percentile(100))
-		latencyPercentiles.Text += fmt.Sprintf("99%%: %fms\n", r.roundTripPrecise.Percentile(99))
-		latencyPercentiles.Text += fmt.Sprintf("95%%: %fms\n", r.roundTripPrecise.Percentile(95))
-		latencyPercentiles.Text += fmt.Sprintf("90%%: %fms\n", r.roundTripPrecise.Percentile(90))
-		latencyPercentiles.Text += fmt.Sprintf("50%%: %fms\n", r.roundTripPrecise.Percentile(50))
+		latencyPercentiles.Text += fmt.Sprintf("100%%: %.2fms\n", r.roundTripPrecise.Percentile(100))
+		latencyPercentiles.Text += fmt.Sprintf("99%%: %.2fms\n", r.roundTripPrecise.Percentile(99))
+		latencyPercentiles.Text += fmt.Sprintf("95%%: %.2fms\n", r.roundTripPrecise.Percentile(95))
+		latencyPercentiles.Text += fmt.Sprintf("90%%: %.2fms\n", r.roundTripPrecise.Percentile(90))
+		latencyPercentiles.Text += fmt.Sprintf("50%%: %.2fms\n", r.roundTripPrecise.Percentile(50))
 		latencyPercentiles.SetRect(0, 0, 30, 7)
 
 		drawables = append(drawables, latencyPercentiles)
@@ -205,7 +237,13 @@ func (r *runner) runLiveUI() {
 
 		requestCounters.SetRect(30, 0, 60, 7)
 
-		drawables = append(drawables, requestCounters)
+		loadLimits := widgets.NewParagraph()
+		loadLimits.Title = "Load Limits"
+		loadLimits.Text = fmt.Sprintf("Concurrency: %d, <Right>/<Left>: ±5%%", atomic.LoadInt64(&r.concurrencyLimit))
+
+		loadLimits.SetRect(60, 0, 100, 7)
+
+		drawables = append(drawables, requestCounters, loadLimits)
 
 		rpsPlot.DataLabels = make([]string, 0, len(counts))
 		rpsPlot.Data = make([][]float64, 0, len(counts))
