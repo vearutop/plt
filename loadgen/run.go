@@ -40,6 +40,8 @@ type runner struct {
 	rateLimit        int64
 	currentReqRate   int64
 	rl               *rate.Limiter
+	lastErr          error
+	errCnt           int64
 }
 
 // Run runs load testing.
@@ -176,7 +178,9 @@ func Run(lf Flags, jobProducer JobProducer) {
 		if rl != nil {
 			err := rl.Wait(context.Background())
 			if err != nil {
-				log.Println(err.Error())
+				r.mu.Lock()
+				r.lastErr = err
+				r.mu.Unlock()
 			}
 		}
 		limiter <- struct{}{} // Reserve limiter slot.
@@ -188,7 +192,12 @@ func Run(lf Flags, jobProducer JobProducer) {
 
 			elapsed, err := jobProducer.Job(i) // err
 			if err != nil {
-				log.Println(err.Error())
+				r.mu.Lock()
+				r.lastErr = err
+				r.mu.Unlock()
+
+				atomic.AddInt64(&r.errCnt, 1)
+
 				return
 			}
 
@@ -276,7 +285,7 @@ func (r *runner) runLiveUI() {
 		atomic.StoreInt64(&r.currentReqRate, int64(reqRateTick))
 
 		latencyPercentiles := widgets.NewParagraph()
-		latencyPercentiles.Title = "Round trip latency, ms"
+		latencyPercentiles.Title = " Round trip latency, ms "
 		latencyPercentiles.Text = ""
 
 		latencyPercentiles.Text += fmt.Sprintf("100%%: %.2fms\n", r.roundTripPrecise.Percentile(100))
@@ -291,16 +300,29 @@ func (r *runner) runLiveUI() {
 		counts := r.jobProducer.RequestCounts()
 		counts["tot"] = r.roundTripHist.Count
 
+		if errCnt := atomic.LoadInt64(&r.errCnt); errCnt != 0 {
+			counts["err"] = int(errCnt)
+		}
+
 		requestCounters := widgets.NewParagraph()
-		requestCounters.Title = "Request Count"
+		requestCounters.Title = " Request Count "
 		requestCounters.Text = ""
 
 		requestCounters.SetRect(30, 0, 60, 7)
 
+		lastErr := ""
+
+		r.mu.Lock()
+		if r.lastErr != nil {
+			lastErr = "ERR: " + r.lastErr.Error()
+			r.lastErr = nil
+		}
+		r.mu.Unlock()
+
 		loadLimits := widgets.NewParagraph()
-		loadLimits.Title = "Load Limits"
-		loadLimits.Text = fmt.Sprintf("Concurrency: %d, <Right>/<Left>: ±5%%\nRate Limit: %d, <Up>/<Down>: ±5%%",
-			atomic.LoadInt64(&r.concurrencyLimit), atomic.LoadInt64(&r.rateLimit))
+		loadLimits.Title = " Load Limits "
+		loadLimits.Text = fmt.Sprintf("Concurrency: %d, <Right>/<Left>: ±5%%\nRate Limit: %d, <Up>/<Down>: ±5%%\n%s",
+			atomic.LoadInt64(&r.concurrencyLimit), atomic.LoadInt64(&r.rateLimit), lastErr)
 
 		loadLimits.SetRect(60, 0, 100, 7)
 
@@ -333,10 +355,9 @@ func (r *runner) runLiveUI() {
 			rpsPlot.Data = append(rpsPlot.Data, rates[name])
 		}
 
-		rpsPlot.Title = fmt.Sprintf("Avg rps: %.2f, current rps: %.2f, total requests: %d, time passed: %s)\n",
+		rpsPlot.Title = fmt.Sprintf(" Press Q or Ctrl+C to quit | avg rps: %.2f, current rps: %.2f, elapsed: %s\n",
 			reqRate,
 			reqRateTick,
-			r.roundTripHist.Count,
 			elaDur.Round(tickerDuration).String(),
 		)
 
@@ -348,7 +369,7 @@ func (r *runner) runLiveUI() {
 			latencyPlot.Data[1] = latencyPlot.Data[1][len(latencyPlot.Data[1])-plotTailSize:]
 		}
 
-		latencyPlot.Title = "Min/Max Latency, ms"
+		latencyPlot.Title = " Min/Max Latency, ms "
 
 		if len(latencyPlot.Data[0]) > 1 {
 			drawables = append(drawables, latencyPlot)

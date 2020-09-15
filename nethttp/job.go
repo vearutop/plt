@@ -288,7 +288,7 @@ func (j *JobProducer) Job(_ int) (time.Duration, error) {
 	if j.respCode[resp.StatusCode] == 1 {
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			println(err.Error())
+			return si, err
 		}
 
 		switch {
@@ -305,12 +305,12 @@ func (j *JobProducer) Job(_ int) (time.Duration, error) {
 
 	_, err = io.Copy(ioutil.Discard, resp.Body)
 	if err != nil {
-		println(err.Error())
+		return si, err
 	}
 
 	err = resp.Body.Close()
 	if err != nil {
-		println(err.Error())
+		return si, err
 	}
 
 	return si, nil
