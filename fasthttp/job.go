@@ -14,6 +14,7 @@ import (
 
 	"github.com/valyala/fasthttp"
 	"github.com/vearutop/plt/nethttp"
+	"github.com/vearutop/plt/report"
 )
 
 // JobProducer sends HTTP requests.
@@ -148,8 +149,8 @@ func (j *JobProducer) Print() {
 	j.mu.Unlock()
 	fmt.Println(codes)
 
-	fmt.Println("Bytes read", atomic.LoadInt64(&j.bytesRead))
-	fmt.Println("Bytes written", atomic.LoadInt64(&j.bytesWritten))
+	fmt.Println("Bytes read", report.ByteSize(atomic.LoadInt64(&j.bytesRead)))
+	fmt.Println("Bytes written", report.ByteSize(atomic.LoadInt64(&j.bytesWritten)))
 
 	fmt.Println(resps)
 }
@@ -188,13 +189,10 @@ func (j *JobProducer) Job(_ int) (time.Duration, error) {
 	if j.respCode[resp.StatusCode()] == 1 {
 		body := resp.Body()
 
-		switch {
-		case len(resp.Header.Peek("Content-Encoding")) > 0:
+		if len(resp.Header.Peek("Content-Encoding")) > 0 {
 			j.respBody[resp.StatusCode()] = []byte("<" + string(resp.Header.Peek("Content-Encoding")) + "-encoded-content>")
-		case len(body) > 1000:
-			j.respBody[resp.StatusCode()] = append(body[0:1000], '.', '.', '.')
-		default:
-			j.respBody[resp.StatusCode()] = body
+		} else {
+			j.respBody[resp.StatusCode()] = report.PeekBody(body, 1000)
 		}
 	}
 	j.mu.Unlock()
