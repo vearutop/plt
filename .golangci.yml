@@ -36,6 +36,7 @@ linters:
     - forbidigo
     - interfacer
     - maligned
+    - errorlint
 
 issues:
   exclude-use-default: false

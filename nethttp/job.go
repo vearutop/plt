@@ -21,6 +21,7 @@ import (
 
 	"github.com/vearutop/dynhist-go"
 	"github.com/vearutop/plt/loadgen"
+	"github.com/vearutop/plt/report"
 )
 
 // JobProducer sends HTTP requests.
@@ -35,16 +36,19 @@ type JobProducer struct {
 	upstreamHist        *dynhist.Collector
 	upstreamHistPrecise *dynhist.Collector
 
-	mu       sync.Mutex
-	respCode map[int]int
-	respBody map[int][]byte
-
+	respCode     [600]int64
 	bytesWritten int64
+	writeTime    int64
 	bytesRead    int64
+	readTime     int64
 
 	f Flags
 
 	tr *http.Transport
+
+	mu         sync.Mutex
+	respBody   map[int][]byte
+	respHeader map[int]http.Header
 }
 
 // RequestCounts returns distribution by status code.
@@ -52,9 +56,9 @@ func (j *JobProducer) RequestCounts() map[string]int {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
-	res := make(map[string]int, len(j.respCode))
-	for code, cnt := range j.respCode {
-		res[strconv.Itoa(code)] = cnt
+	res := make(map[string]int, len(j.respBody))
+	for code := range j.respBody {
+		res[strconv.Itoa(code)] = int(atomic.LoadInt64(&j.respCode[code]))
 	}
 
 	return res
@@ -162,8 +166,8 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 	j.ttfbHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	j.upstreamHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	j.upstreamHistPrecise = &dynhist.Collector{BucketsLimit: 100, WeightFunc: dynhist.LatencyWidth}
-	j.respCode = make(map[int]int, 5)
 	j.respBody = make(map[int][]byte, 5)
+	j.respHeader = make(map[int]http.Header, 5)
 	j.f = f
 
 	if _, ok := f.HeaderMap["User-Agent"]; !ok {
@@ -175,6 +179,18 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 
 // Print prints results.
 func (j *JobProducer) Print() {
+	fmt.Println()
+
+	bytesRead := atomic.LoadInt64(&j.bytesRead)
+	readTime := atomic.LoadInt64(&j.readTime)
+	dlSpeed := float64(bytesRead) / time.Duration(readTime).Seconds()
+
+	bytesWritten := atomic.LoadInt64(&j.bytesWritten)
+	writeTime := atomic.LoadInt64(&j.writeTime)
+	ulSpeed := float64(bytesWritten) / time.Duration(writeTime).Seconds()
+
+	fmt.Println("Bytes read", report.ByteSize(bytesRead), "/", report.ByteSize(int64(dlSpeed))+"/s")
+	fmt.Println("Bytes written", report.ByteSize(bytesWritten), "/", report.ByteSize(int64(ulSpeed))+"/s")
 	fmt.Println()
 
 	if j.upstreamHist.Count > 0 {
@@ -211,24 +227,30 @@ func (j *JobProducer) Print() {
 	codes := ""
 	resps := ""
 
-	for code, cnt := range j.respCode {
-		codes += fmt.Sprintf("[%d] %d\n", code, cnt)
-		resps += fmt.Sprintf("[%d]\n%s\n", code, string(j.respBody[code]))
+	for code := range j.respBody {
+		codes += fmt.Sprintf("[%d] %d\n", code, atomic.LoadInt64(&j.respCode[code]))
+		h := bytes.NewBuffer(nil)
+
+		err := j.respHeader[code].Write(h)
+		if err != nil {
+			fmt.Println("Failed to render headers:", err)
+		}
+
+		resps += fmt.Sprintf("[%d]\n%s\n%s\n", code, h.String(), string(j.respBody[code]))
 	}
 	j.mu.Unlock()
 	fmt.Println(codes)
 
-	fmt.Println("Bytes read", atomic.LoadInt64(&j.bytesRead))
-	fmt.Println("Bytes written", atomic.LoadInt64(&j.bytesWritten))
-
+	fmt.Println("Response samples (first by status code):")
 	fmt.Println(resps)
 }
 
+// SampleSize is maximum number of bytes to sample from response.
+const SampleSize = 1000
+
 // Job runs single item of load.
 func (j *JobProducer) Job(_ int) (time.Duration, error) {
-	start := time.Now()
-
-	var dnsStart, connStart, tlsStart time.Time
+	var start, dnsStart, connStart, tlsStart, dlStart time.Time
 
 	var body io.Reader
 	if j.f.Body != "" {
@@ -265,7 +287,13 @@ func (j *JobProducer) Job(_ int) (time.Duration, error) {
 		TLSHandshakeDone: func(tls.ConnectionState, error) {
 			j.tlsHist.Add(1000 * time.Since(tlsStart).Seconds())
 		},
+
+		WroteRequest: func(_ httptrace.WroteRequestInfo) {
+			atomic.AddInt64(&j.writeTime, int64(time.Since(start)))
+		},
+
 		GotFirstResponseByte: func() {
+			dlStart = time.Now()
 			j.ttfbHist.Add(1000 * time.Since(start).Seconds())
 		},
 	}
@@ -277,15 +305,12 @@ func (j *JobProducer) Job(_ int) (time.Duration, error) {
 		tr = j.makeTransport()
 	}
 
+	start = time.Now()
+
 	resp, err := tr.RoundTrip(req)
 	if err != nil {
 		return 0, err
 	}
-
-	si := time.Since(start)
-
-	j.mu.Lock()
-	j.respCode[resp.StatusCode]++
 
 	if envoyUpstreamMS := resp.Header.Get("X-Envoy-Upstream-Service-Time"); envoyUpstreamMS != "" {
 		ms, err := strconv.Atoi(envoyUpstreamMS)
@@ -295,33 +320,46 @@ func (j *JobProducer) Job(_ int) (time.Duration, error) {
 		}
 	}
 
-	if j.respCode[resp.StatusCode] == 1 {
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return si, err
+	cnt := atomic.AddInt64(&j.respCode[resp.StatusCode], 1)
+
+	if cnt == 1 {
+		j.mu.Lock()
+
+		// Read a few bytes of response to save as sample.
+		body := make([]byte, SampleSize+1)
+
+		n, err := io.ReadAtLeast(resp.Body, body, SampleSize+1)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return 0, err
 		}
 
-		switch {
-		case resp.Header.Get("Content-Encoding") != "":
+		body = body[0:n]
+
+		if resp.Header.Get("Content-Encoding") != "" {
 			j.respBody[resp.StatusCode] = []byte("<" + resp.Header.Get("Content-Encoding") + "-encoded-content>")
-		case len(body) > 1000:
-			j.respBody[resp.StatusCode] = append(body[0:1000], '.', '.', '.')
-		default:
-			j.respBody[resp.StatusCode] = body
+		} else {
+			j.respBody[resp.StatusCode] = report.PeekBody(body, SampleSize)
 		}
-	}
 
-	j.mu.Unlock()
+		j.respHeader[resp.StatusCode] = resp.Header
+
+		j.mu.Unlock()
+	}
 
 	_, err = io.Copy(ioutil.Discard, resp.Body)
 	if err != nil {
-		return si, err
+		return 0, err
 	}
 
 	err = resp.Body.Close()
 	if err != nil {
-		return si, err
+		return 0, err
 	}
+
+	done := time.Now()
+
+	atomic.AddInt64(&j.readTime, int64(done.Sub(dlStart)))
+	si := done.Sub(start)
 
 	return si, nil
 }
