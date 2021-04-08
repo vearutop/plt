@@ -164,6 +164,7 @@ func AddCommand(lf *loadgen.Flags) {
 			flags.URL = "http://" + flags.URL
 		}
 		run(*lf, flags)
+
 		return nil
 	})
 }

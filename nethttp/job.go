@@ -30,6 +30,7 @@ type JobProducer struct {
 	dnsHist  *dynhist.Collector
 	connHist *dynhist.Collector
 	tlsHist  *dynhist.Collector
+	ttfbHist *dynhist.Collector
 
 	upstreamHist        *dynhist.Collector
 	upstreamHistPrecise *dynhist.Collector
@@ -158,6 +159,7 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 	j.dnsHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	j.connHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	j.tlsHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
+	j.ttfbHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	j.upstreamHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	j.upstreamHistPrecise = &dynhist.Collector{BucketsLimit: 100, WeightFunc: dynhist.LatencyWidth}
 	j.respCode = make(map[int]int, 5)
@@ -194,6 +196,11 @@ func (j *JobProducer) Print() {
 	if j.tlsHist.Count > 0 {
 		fmt.Println("TLS handshake latency distribution in ms:")
 		fmt.Println(j.tlsHist.String())
+	}
+
+	if j.ttfbHist.Count > 0 {
+		fmt.Println("Time to first resp byte (TTFB) distribution in ms:")
+		fmt.Println(j.ttfbHist.String())
 	}
 
 	fmt.Println("Connection latency distribution in ms:")
@@ -257,6 +264,9 @@ func (j *JobProducer) Job(_ int) (time.Duration, error) {
 		},
 		TLSHandshakeDone: func(tls.ConnectionState, error) {
 			j.tlsHist.Add(1000 * time.Since(tlsStart).Seconds())
+		},
+		GotFirstResponseByte: func() {
+			j.ttfbHist.Add(1000 * time.Since(start).Seconds())
 		},
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
