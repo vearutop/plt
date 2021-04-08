@@ -41,6 +41,7 @@ type JobProducer struct {
 	writeTime    int64
 	bytesRead    int64
 	readTime     int64
+	total        int64
 
 	f Flags
 
@@ -189,8 +190,10 @@ func (j *JobProducer) Print() {
 	writeTime := atomic.LoadInt64(&j.writeTime)
 	ulSpeed := float64(bytesWritten) / time.Duration(writeTime).Seconds()
 
-	fmt.Println("Bytes read", report.ByteSize(bytesRead), "/", report.ByteSize(int64(dlSpeed))+"/s")
-	fmt.Println("Bytes written", report.ByteSize(bytesWritten), "/", report.ByteSize(int64(ulSpeed))+"/s")
+	fmt.Println("Bytes read", report.ByteSize(bytesRead), "total,",
+		report.ByteSize(bytesRead/atomic.LoadInt64(&j.total)), "avg,", report.ByteSize(int64(dlSpeed))+"/s")
+	fmt.Println("Bytes written", report.ByteSize(bytesWritten), "total,",
+		report.ByteSize(bytesWritten/atomic.LoadInt64(&j.total)), "avg,", report.ByteSize(int64(ulSpeed))+"/s")
 	fmt.Println()
 
 	if j.upstreamHist.Count > 0 {
@@ -360,6 +363,8 @@ func (j *JobProducer) Job(_ int) (time.Duration, error) {
 
 	atomic.AddInt64(&j.readTime, int64(done.Sub(dlStart)))
 	si := done.Sub(start)
+
+	atomic.AddInt64(&j.total, 1)
 
 	return si, nil
 }
