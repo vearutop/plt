@@ -27,6 +27,15 @@ linters:
     - gochecknoglobals
     - funlen
     - gocognit
+    - wrapcheck
+    - wastedassign
+    - noctx
+    - ifshort
+    - cyclop
+    - exhaustivestruct
+    - forbidigo
+    - interfacer
+    - maligned
 
 issues:
   exclude-use-default: false
@@ -34,4 +43,9 @@ issues:
     - linters:
         - gomnd
         - goconst
+        - goerr113
+        - noctx
+        - funlen
+        - dupl
       path: "_test.go"
+
