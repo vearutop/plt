@@ -1,4 +1,5 @@
 #GOLANGCI_LINT_VERSION := "v1.38.0" # Optional configuration to pinpoint golangci-lint version.
+VERSION := $(shell git symbolic-ref -q --short HEAD || git describe --tags --exact-match)
 
 # The head of Makefile determines location of dev-go to include standard targets.
 GO ?= go
