@@ -19,14 +19,14 @@ import (
 
 // JobProducer sends HTTP requests.
 type JobProducer struct {
+	bytesWritten int64
+	bytesRead    int64
+
 	start time.Time
 
 	mu       sync.Mutex
 	respCode map[int]int
 	respBody map[int][]byte
-
-	bytesWritten int64
-	bytesRead    int64
 
 	body   []byte
 	f      nethttp.Flags
