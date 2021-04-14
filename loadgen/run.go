@@ -26,6 +26,11 @@ const (
 )
 
 type runner struct {
+	concurrencyLimit int64
+	rateLimit        int64
+	currentReqRate   int64
+	errCnt           int64
+
 	start time.Time
 	exit  chan os.Signal
 
@@ -35,13 +40,9 @@ type runner struct {
 
 	jobProducer JobProducer
 
-	mu               sync.Mutex
-	concurrencyLimit int64
-	rateLimit        int64
-	currentReqRate   int64
-	rl               *rate.Limiter
-	lastErr          error
-	errCnt           int64
+	mu      sync.Mutex
+	rl      *rate.Limiter
+	lastErr error
 }
 
 // Run runs load testing.
@@ -74,7 +75,7 @@ func Run(lf Flags, jobProducer JobProducer) {
 
 	n := lf.Number
 	if n <= 0 {
-		n = math.MaxInt64
+		n = math.MaxInt32
 	}
 
 	dur := lf.Duration

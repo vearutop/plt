@@ -26,6 +26,13 @@ import (
 
 // JobProducer sends HTTP requests.
 type JobProducer struct {
+	bytesWritten int64
+	writeTime    int64
+	bytesRead    int64
+	readTime     int64
+	total        int64
+	respCode     [600]int64
+
 	start time.Time
 
 	dnsHist  *dynhist.Collector
@@ -35,13 +42,6 @@ type JobProducer struct {
 
 	upstreamHist        *dynhist.Collector
 	upstreamHistPrecise *dynhist.Collector
-
-	respCode     [600]int64
-	bytesWritten int64
-	writeTime    int64
-	bytesRead    int64
-	readTime     int64
-	total        int64
 
 	f Flags
 
