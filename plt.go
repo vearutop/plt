@@ -2,16 +2,15 @@ package main
 
 import (
 	"github.com/alecthomas/kingpin"
+	"github.com/bool64/dev/version"
 	"github.com/vearutop/plt/curl"
 	"github.com/vearutop/plt/loadgen"
 )
 
-var version = "dev"
-
 func main() {
 	kingpin.CommandLine.Help = "Pocket load tester pushes to the limit"
 
-	kingpin.Version(version)
+	kingpin.Version(version.Info().Version)
 
 	lf := loadgen.Flags{}
 	kingpin.Flag("number", "Number of requests to run, 0 is infinite.").
