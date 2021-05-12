@@ -1,4 +1,5 @@
 export CGO_ENABLED = 0
+BUILD_LDFLAGS="-s -w"
 
 #GOLANGCI_LINT_VERSION := "v1.39.0" # Optional configuration to pinpoint golangci-lint version.
 
