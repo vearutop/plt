@@ -1,7 +1,7 @@
 export CGO_ENABLED = 0
 BUILD_LDFLAGS="-s -w"
 
-#GOLANGCI_LINT_VERSION := "v1.39.0" # Optional configuration to pinpoint golangci-lint version.
+#GOLANGCI_LINT_VERSION := "v1.40.1" # Optional configuration to pinpoint golangci-lint version.
 
 # The head of Makefile determines location of dev-go to include standard targets.
 GO ?= go
@@ -32,12 +32,8 @@ endif
 
 -include $(DEVGO_PATH)/makefiles/main.mk
 -include $(DEVGO_PATH)/makefiles/lint.mk
--include $(DEVGO_PATH)/makefiles/test-unit.mk
 -include $(DEVGO_PATH)/makefiles/release-assets.mk
 -include $(DEVGO_PATH)/makefiles/build.mk
 -include $(DEVGO_PATH)/makefiles/reset-ci.mk
 
 # Add your custom targets here.
-
-## Run tests
-test: test-unit

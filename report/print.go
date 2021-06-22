@@ -50,8 +50,10 @@ const (
 
 // ByteSize returns a human-readable byte string of the form 10M, 12.5K, and so forth.
 func ByteSize(bytes int64) string {
-	unit := ""
-	value := float64(bytes)
+	var (
+		unit  string
+		value = float64(bytes)
+	)
 
 	switch {
 	case bytes >= EXABYTE:

@@ -20,22 +20,28 @@ linters-settings:
 linters:
   enable-all: true
   disable:
+    - noctx
+    - errorlint
+    - cyclop
     - goerr113
     - gomnd
     - gocyclo
     - gochecknoglobals
     - funlen
     - gocognit
-    - wrapcheck
-    - wastedassign
-    - noctx
-    - ifshort
-    - cyclop
-    - exhaustivestruct
-    - forbidigo
-    - interfacer
+    - lll
     - maligned
-    - errorlint
+    - gochecknoglobals
+    - gomnd
+    - wrapcheck
+    - paralleltest
+    - forbidigo
+    - exhaustivestruct
+    - interfacer # deprecated
+    - forcetypeassert
+    - scopelint # deprecated
+    - ifshort # too many false positives
+    - golint # deprecated
 
 issues:
   exclude-use-default: false
