@@ -1,6 +1,7 @@
 package loadgen
 
 import (
+	"bytes"
 	"context"
 	"expvar"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 
 	ui "github.com/gizak/termui/v3"
 	"github.com/gizak/termui/v3/widgets"
+	"github.com/nsf/termbox-go"
 	"github.com/vearutop/dynhist-go"
 	"golang.org/x/time/rate"
 )
@@ -94,72 +96,7 @@ func Run(lf Flags, jobProducer JobProducer) {
 	done := int32(0)
 
 	if lf.LiveUI {
-		go func() {
-			refreshRateLimiter := func() {
-				lim := atomic.LoadInt64(&r.rateLimit)
-				if lim == 0 {
-					return
-				}
-
-				rl := rate.NewLimiter(rate.Limit(lim), 1)
-
-				r.mu.Lock()
-				r.rl = rl
-				r.mu.Unlock()
-			}
-
-			rateLimit := func() int64 {
-				lim := atomic.LoadInt64(&r.rateLimit)
-
-				if lim == 0 {
-					lim = atomic.LoadInt64(&r.currentReqRate)
-				}
-
-				return lim
-			}
-
-			uiEvents := ui.PollEvents()
-			for e := range uiEvents {
-				switch e.ID {
-				case "q", "<C-c>":
-					r.exit <- os.Interrupt
-				case "<Right>": // Increase concurrency.
-					lim := atomic.LoadInt64(&r.concurrencyLimit)
-					delta := int64(0.05 * float64(lim))
-
-					if lim+delta <= maxConcurrency {
-						atomic.AddInt64(&r.concurrencyLimit, delta)
-
-						for i := int64(0); i < delta; i++ {
-							<-limiter
-						}
-					}
-				case "<Left>": // Decrease concurrency.
-					lim := atomic.LoadInt64(&r.concurrencyLimit)
-					delta := int64(0.05 * float64(lim))
-
-					if lim-delta > 0 {
-						atomic.AddInt64(&r.concurrencyLimit, -delta)
-
-						for i := int64(0); i < delta; i++ {
-							limiter <- struct{}{}
-						}
-					}
-
-				case "<Up>": // Increase rate limit.
-					lim := rateLimit()
-					delta := int64(0.05 * float64(lim))
-					atomic.StoreInt64(&r.rateLimit, lim+delta)
-					refreshRateLimiter()
-
-				case "<Down>": // Decrease rate limit.
-					lim := rateLimit()
-					delta := int64(0.05 * float64(lim))
-					atomic.StoreInt64(&r.rateLimit, lim-delta)
-					refreshRateLimiter()
-				}
-			}
-		}()
+		go r.startLiveUIPoller(limiter)
 	}
 
 	go func() {
@@ -191,7 +128,7 @@ func Run(lf Flags, jobProducer JobProducer) {
 				<-limiter // Free limiter slot.
 			}()
 
-			elapsed, err := jobProducer.Job(i) // err
+			elapsed, err := jobProducer.Job(i)
 			if err != nil {
 				r.mu.Lock()
 				r.lastErr = err
@@ -224,7 +161,25 @@ func Run(lf Flags, jobProducer JobProducer) {
 	}
 
 	if lf.LiveUI {
+		var buf []byte
+
+		w, h := termbox.Size()
+
+		for y := 0; y < h; y++ {
+			for x := 0; x < w; x++ {
+				c := termbox.GetCell(x, y)
+
+				buf = append(buf, []byte(string(c.Ch))...)
+			}
+
+			buf = bytes.Trim(buf, "\n \000")
+			buf = append(buf, '\n')
+		}
+
 		ui.Close()
+
+		buf = bytes.Trim(buf, "\n \000")
+		fmt.Println(string(buf))
 	}
 
 	fmt.Println()
@@ -243,6 +198,83 @@ func Run(lf Flags, jobProducer JobProducer) {
 	fmt.Println(r.roundTripHist.String())
 
 	fmt.Println("Requests with latency more than "+lf.SlowResponse.String()+":", slow.Value())
+}
+
+func (r *runner) startLiveUIPoller(limiter chan struct{}) {
+	refreshRateLimiter := func() {
+		lim := atomic.LoadInt64(&r.rateLimit)
+		if lim == 0 {
+			return
+		}
+
+		rl := rate.NewLimiter(rate.Limit(lim), 1)
+
+		r.mu.Lock()
+		r.rl = rl
+		r.mu.Unlock()
+	}
+
+	rateLimit := func() int64 {
+		lim := atomic.LoadInt64(&r.rateLimit)
+
+		if lim == 0 {
+			lim = atomic.LoadInt64(&r.currentReqRate)
+		}
+
+		return lim
+	}
+
+	uiEvents := ui.PollEvents()
+	for e := range uiEvents {
+		switch e.ID {
+		case "q", "<C-c>":
+			r.exit <- os.Interrupt
+		case "<Right>": // Increase concurrency.
+			lim := atomic.LoadInt64(&r.concurrencyLimit)
+			delta := int64(0.05 * float64(lim))
+
+			if lim+delta <= maxConcurrency {
+				atomic.AddInt64(&r.concurrencyLimit, delta)
+
+				for i := int64(0); i < delta; i++ {
+					<-limiter
+				}
+			}
+		case "<Left>": // Decrease concurrency.
+			lim := atomic.LoadInt64(&r.concurrencyLimit)
+			delta := int64(0.05 * float64(lim))
+
+			if lim-delta > 0 {
+				atomic.AddInt64(&r.concurrencyLimit, -delta)
+
+				for i := int64(0); i < delta; i++ {
+					limiter <- struct{}{}
+				}
+			}
+
+		case "<Up>": // Increase rate limit.
+			lim := rateLimit()
+
+			delta := int64(0.05 * float64(lim))
+			if delta < 1 {
+				delta = 1
+			}
+
+			atomic.StoreInt64(&r.rateLimit, lim+delta)
+			refreshRateLimiter()
+
+		case "<Down>": // Decrease rate limit.
+			lim := rateLimit()
+
+			delta := int64(0.05 * float64(lim))
+			if delta < 1 {
+				delta = 1
+			}
+
+			atomic.StoreInt64(&r.rateLimit, lim-delta)
+			refreshRateLimiter()
+		}
+	}
 }
 
 func (r *runner) runLiveUI() {
