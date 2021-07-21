@@ -4,7 +4,7 @@ package report
 import (
 	"strconv"
 	"strings"
-	"unicode"
+	"unicode/utf8"
 )
 
 // PeekBody takes head of data for printing.
@@ -15,7 +15,7 @@ func PeekBody(body []byte, l int) []byte {
 		body = body[0:l]
 	}
 
-	if !IsASCIIPrintable(string(body)) {
+	if !utf8.Valid(body) {
 		return []byte("<non-printable-binary-data>")
 	}
 
@@ -24,17 +24,6 @@ func PeekBody(body []byte, l int) []byte {
 	}
 
 	return body
-}
-
-// IsASCIIPrintable checks if s is ascii.
-func IsASCIIPrintable(s string) bool {
-	for _, r := range s {
-		if r > unicode.MaxASCII {
-			return false
-		}
-	}
-
-	return true
 }
 
 // Bytes.
