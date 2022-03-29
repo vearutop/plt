@@ -1,7 +1,4 @@
-export CGO_ENABLED = 0
-BUILD_LDFLAGS="-s -w"
-
-#GOLANGCI_LINT_VERSION := "v1.40.1" # Optional configuration to pinpoint golangci-lint version.
+#GOLANGCI_LINT_VERSION := "v1.45.0" # Optional configuration to pinpoint golangci-lint version.
 
 # The head of Makefile determines location of dev-go to include standard targets.
 GO ?= go
@@ -26,9 +23,12 @@ ifeq ($(DEVGO_PATH),)
 	DEVGO_PATH := $(shell GO111MODULE=on $(GO) list ${modVendor} -f '{{.Dir}}' -m github.com/bool64/dev)
 	ifeq ($(DEVGO_PATH),)
     	$(info Module github.com/bool64/dev not found, downloading.)
-    	DEVGO_PATH := $(shell export GO111MODULE=on && $(GO) mod tidy && $(GO) list -f '{{.Dir}}' -m github.com/bool64/dev)
+    	DEVGO_PATH := $(shell export GO111MODULE=on && $(GO) get github.com/bool64/dev && $(GO) list -f '{{.Dir}}' -m github.com/bool64/dev)
 	endif
 endif
+
+export CGO_ENABLED = 0
+BUILD_LDFLAGS="-s -w"
 
 -include $(DEVGO_PATH)/makefiles/main.mk
 -include $(DEVGO_PATH)/makefiles/lint.mk
