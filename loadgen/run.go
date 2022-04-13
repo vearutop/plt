@@ -67,9 +67,9 @@ func Run(lf Flags, jobProducer JobProducer) {
 		r.concurrencyLimit = 50
 	}
 
-	limiter := make(chan struct{}, maxConcurrency)
+	semaphore := make(chan struct{}, maxConcurrency)
 	for i := 0; int64(i) < maxConcurrency-r.concurrencyLimit; i++ {
-		limiter <- struct{}{}
+		semaphore <- struct{}{}
 	}
 
 	r.start = time.Now()
@@ -96,7 +96,7 @@ func Run(lf Flags, jobProducer JobProducer) {
 	done := int32(0)
 
 	if lf.LiveUI {
-		go r.startLiveUIPoller(limiter)
+		go r.startLiveUIPoller(semaphore)
 	}
 
 	go func() {
@@ -121,11 +121,11 @@ func Run(lf Flags, jobProducer JobProducer) {
 				r.mu.Unlock()
 			}
 		}
-		limiter <- struct{}{} // Reserve limiter slot.
+		semaphore <- struct{}{} // Acquire semaphore slot.
 
 		go func() {
 			defer func() {
-				<-limiter // Free limiter slot.
+				<-semaphore // Release semaphore slot.
 			}()
 
 			elapsed, err := jobProducer.Job(i)
@@ -157,7 +157,7 @@ func Run(lf Flags, jobProducer JobProducer) {
 
 	// Wait for goroutines to finish by filling full channel.
 	for i := 0; int64(i) < atomic.LoadInt64(&r.concurrencyLimit); i++ {
-		limiter <- struct{}{}
+		semaphore <- struct{}{}
 	}
 
 	if lf.LiveUI {
@@ -184,8 +184,20 @@ func Run(lf Flags, jobProducer JobProducer) {
 
 	fmt.Println()
 	fmt.Println("Requests per second:", fmt.Sprintf("%.2f", float64(r.roundTripHist.Count)/time.Since(r.start).Seconds()))
-	fmt.Println("Total requests:", r.roundTripHist.Count)
+	fmt.Println("Successful requests:", r.roundTripHist.Count)
+
+	if r.errCnt > 0 {
+		fmt.Printf("Failed requests: %d, last error: %s\n", r.errCnt, r.lastErr.Error())
+	}
+
 	fmt.Println("Time spent:", time.Since(r.start).Round(time.Millisecond))
+
+	if r.roundTripHist.Count == 0 {
+		fmt.Println()
+		fmt.Println("All requests failed")
+
+		return
+	}
 
 	fmt.Println()
 	fmt.Println("Request latency percentiles:")

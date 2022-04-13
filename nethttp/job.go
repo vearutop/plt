@@ -19,9 +19,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lucas-clemente/quic-go/http3"
 	"github.com/vearutop/dynhist-go"
 	"github.com/vearutop/plt/loadgen"
 	"github.com/vearutop/plt/report"
+	"golang.org/x/net/http2"
 )
 
 // JobProducer sends HTTP requests.
@@ -43,13 +45,15 @@ type JobProducer struct {
 	upstreamHist        *dynhist.Collector
 	upstreamHistPrecise *dynhist.Collector
 
-	f Flags
+	f  Flags
+	lf loadgen.Flags
 
-	tr *http.Transport
+	tr http.RoundTripper
 
 	mu         sync.Mutex
 	respBody   map[int][]byte
 	respHeader map[int]http.Header
+	respProto  map[int]string
 }
 
 // RequestCounts returns distribution by status code.
@@ -107,12 +111,18 @@ func (c countingConn) Write(b []byte) (n int, err error) {
 	return n, err
 }
 
-func (j *JobProducer) makeTransport() *http.Transport {
-	d := &net.Dialer{
-		Timeout:   30 * time.Second,
-		KeepAlive: 30 * time.Second,
+func (j *JobProducer) makeTransport() http.RoundTripper {
+	switch {
+	case j.f.HTTP2:
+		return j.makeTransport2()
+	case j.f.HTTP3:
+		return j.makeTransport3()
+	default:
+		return j.makeTransport1()
 	}
+}
 
+func (j *JobProducer) makeTransport1() *http.Transport {
 	t := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		MaxIdleConns:          100,
@@ -120,6 +130,11 @@ func (j *JobProducer) makeTransport() *http.Transport {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 		DisableCompression:    true,
+	}
+
+	d := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
 	}
 
 	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -134,7 +149,44 @@ func (j *JobProducer) makeTransport() *http.Transport {
 		}, nil
 	}
 
+	concurrencyLimit := j.lf.Concurrency // Number of simultaneous jobs.
+	if concurrencyLimit <= 0 {
+		concurrencyLimit = 50
+	}
+
+	t.MaxIdleConnsPerHost = concurrencyLimit
+
 	return t
+}
+
+func (j *JobProducer) makeTransport2() *http2.Transport {
+	t := &http2.Transport{
+		DisableCompression: true,
+		AllowHTTP:          true,
+	}
+
+	t.DialTLS = func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+		c, err := tls.DialWithDialer(new(net.Dialer), network, addr, cfg)
+		if err != nil {
+			return c, err
+		}
+
+		return countingConn{
+			j:    j,
+			Conn: c,
+		}, nil
+	}
+
+	return t
+}
+
+func (j *JobProducer) makeTransport3() *http3.RoundTripper {
+	return &http3.RoundTripper{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, // nolint:gosec // Allow insecure mode in a dev tool.
+		},
+		DisableCompression: true,
+	}
 }
 
 // NewJobProducer creates HTTP load generator.
@@ -152,14 +204,10 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 	fmt.Println("Host resolved:", strings.Join(addrs, ","))
 
 	j := JobProducer{}
-
-	concurrencyLimit := lf.Concurrency // Number of simultaneous jobs.
-	if concurrencyLimit <= 0 {
-		concurrencyLimit = 50
-	}
+	j.f = f
+	j.lf = lf
 
 	j.tr = j.makeTransport()
-	j.tr.MaxIdleConnsPerHost = concurrencyLimit
 
 	j.dnsHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	j.connHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
@@ -169,7 +217,7 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 	j.upstreamHistPrecise = &dynhist.Collector{BucketsLimit: 100, WeightFunc: dynhist.LatencyWidth}
 	j.respBody = make(map[int][]byte, 5)
 	j.respHeader = make(map[int]http.Header, 5)
-	j.f = f
+	j.respProto = make(map[int]string, 5)
 
 	if _, ok := f.HeaderMap["User-Agent"]; !ok {
 		f.HeaderMap["User-Agent"] = "plt"
@@ -180,6 +228,13 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 
 // Print prints results.
 func (j *JobProducer) Print() {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	if len(j.respBody) == 0 {
+		return
+	}
+
 	fmt.Println()
 
 	bytesRead := atomic.LoadInt64(&j.bytesRead)
@@ -190,11 +245,13 @@ func (j *JobProducer) Print() {
 	writeTime := atomic.LoadInt64(&j.writeTime)
 	ulSpeed := float64(bytesWritten) / time.Duration(writeTime).Seconds()
 
-	fmt.Println("Bytes read", report.ByteSize(bytesRead), "total,",
-		report.ByteSize(bytesRead/atomic.LoadInt64(&j.total)), "avg,", report.ByteSize(int64(dlSpeed))+"/s")
-	fmt.Println("Bytes written", report.ByteSize(bytesWritten), "total,",
-		report.ByteSize(bytesWritten/atomic.LoadInt64(&j.total)), "avg,", report.ByteSize(int64(ulSpeed))+"/s")
-	fmt.Println()
+	if bytesRead > 0 && bytesWritten > 0 && atomic.LoadInt64(&j.total) > 0 {
+		fmt.Println("Bytes read", report.ByteSize(bytesRead), "total,",
+			report.ByteSize(bytesRead/atomic.LoadInt64(&j.total)), "avg,", report.ByteSize(int64(dlSpeed))+"/s")
+		fmt.Println("Bytes written", report.ByteSize(bytesWritten), "total,",
+			report.ByteSize(bytesWritten/atomic.LoadInt64(&j.total)), "avg,", report.ByteSize(int64(ulSpeed))+"/s")
+		fmt.Println()
+	}
 
 	if j.upstreamHist.Count > 0 {
 		fmt.Println("Envoy upstream latency percentiles:")
@@ -222,11 +279,13 @@ func (j *JobProducer) Print() {
 		fmt.Println(j.ttfbHist.String())
 	}
 
-	fmt.Println("Connection latency distribution in ms:")
-	fmt.Println(j.connHist.String())
+	if j.connHist.Count > 0 {
+		fmt.Println("Connection latency distribution in ms:")
+		fmt.Println(j.connHist.String())
+	}
 
 	fmt.Println("Responses by status code")
-	j.mu.Lock()
+
 	codes := ""
 	resps := ""
 
@@ -239,9 +298,9 @@ func (j *JobProducer) Print() {
 			fmt.Println("Failed to render headers:", err)
 		}
 
-		resps += fmt.Sprintf("[%d]\n%s\n%s\n", code, h.String(), string(j.respBody[code]))
+		resps += fmt.Sprintf("[%s %d]\n%s\n%s\n", j.respProto[code], code, h.String(), string(j.respBody[code]))
 	}
-	j.mu.Unlock()
+
 	fmt.Println(codes)
 
 	fmt.Println("Response samples (first by status code):")
@@ -345,6 +404,7 @@ func (j *JobProducer) Job(_ int) (time.Duration, error) {
 		}
 
 		j.respHeader[resp.StatusCode] = resp.Header
+		j.respProto[resp.StatusCode] = resp.Proto
 
 		j.mu.Unlock()
 	}
@@ -378,4 +438,6 @@ type Flags struct {
 	NoKeepalive bool
 	Compressed  bool
 	Fast        bool
+	HTTP2       bool
+	HTTP3       bool
 }
