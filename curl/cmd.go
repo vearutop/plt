@@ -41,6 +41,7 @@ func AddCommand(lf *loadgen.Flags) {
 		captureBool = map[string]*bool{
 			"compressed":   &capture.compressed,
 			"no-keepalive": &flags.NoKeepalive,
+			"http2":        &flags.HTTP2,
 		}
 		ignoredString = map[string]*string{}
 		ignoredBool   = map[string]*bool{}
@@ -49,6 +50,7 @@ func AddCommand(lf *loadgen.Flags) {
 	curl := kingpin.Command("curl", "Repetitive HTTP transfer")
 
 	curl.Flag("fast", "Use fasthttp to achieve higher request rate").BoolVar(&flags.Fast)
+	curl.Flag("http3", "Use quic-go http3").BoolVar(&flags.HTTP3)
 	curl.Flag("2.0", `Workaround of Firefox "Copy as cURL" incompatibility.`).Bool()
 	curl.Arg("url", "The URL.").StringVar(&flags.URL)
 

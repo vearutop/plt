@@ -56,6 +56,8 @@ You can "copy as cURL" in your browser and then prepend that with `plt` to throw
 For even better performance you can use `plt curl --fast` that will employ awesome [fasthttp](https://github.com/valyala/fasthttp)
 as transport. This mode lacks detailed breakdown of latencies, but can push request rate to the limit.
 
+Use `--http2` or `--http3` for HTTP/2 or HTTP/3.
+
 If the server is wrapped with Envoy proxy, upstream latency distribution will be collected from the values of [`X-Envoy-Upstream-Service-Time`](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/router_filter#x-envoy-upstream-service-time) response header.
 
 In `--live-ui` mode you can control concurrency and rate limits with arrow keys.

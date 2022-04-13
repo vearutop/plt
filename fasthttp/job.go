@@ -134,10 +134,9 @@ func NewJobProducer(f nethttp.Flags) *JobProducer {
 
 // Print reports results.
 func (j *JobProducer) Print() {
-	fmt.Println()
-
-	fmt.Println("Responses by status code")
 	j.mu.Lock()
+	defer j.mu.Unlock()
+
 	codes := ""
 	resps := ""
 
@@ -146,7 +145,13 @@ func (j *JobProducer) Print() {
 		resps += fmt.Sprintf("[%d]\n%s\n", code, string(j.respBody[code]))
 	}
 
-	j.mu.Unlock()
+	if codes == "" {
+		return
+	}
+
+	fmt.Println(codes)
+
+	fmt.Println("Responses by status code")
 	fmt.Println(codes)
 
 	fmt.Println("Bytes read", report.ByteSize(atomic.LoadInt64(&j.bytesRead)))
