@@ -5,6 +5,7 @@ import (
 	"github.com/bool64/dev/version"
 	"github.com/vearutop/plt/curl"
 	"github.com/vearutop/plt/loadgen"
+	"github.com/vearutop/plt/s3"
 )
 
 func main() {
@@ -26,6 +27,7 @@ func main() {
 	kingpin.Flag("live-ui", "Show live ui with statistics.").BoolVar(&lf.LiveUI)
 
 	curl.AddCommand(&lf)
+	s3.AddCommand(&lf)
 
 	kingpin.Parse()
 }

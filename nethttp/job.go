@@ -35,8 +35,6 @@ type JobProducer struct {
 	total        int64
 	respCode     [600]int64
 
-	start time.Time
-
 	dnsHist  *dynhist.Collector
 	connHist *dynhist.Collector
 	tlsHist  *dynhist.Collector
@@ -64,23 +62,6 @@ func (j *JobProducer) RequestCounts() map[string]int {
 	res := make(map[string]int, len(j.respBody))
 	for code := range j.respBody {
 		res[strconv.Itoa(code)] = int(atomic.LoadInt64(&j.respCode[code]))
-	}
-
-	return res
-}
-
-// Metrics return additional stats.
-func (j *JobProducer) Metrics() map[string]map[string]float64 {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-
-	elapsed := time.Since(j.start).Seconds()
-
-	res := map[string]map[string]float64{
-		"Bandwidth, MB/s": {
-			"Read":  float64(j.bytesRead) / (1024 * 1024 * elapsed),
-			"Write": float64(j.bytesWritten) / (1024 * 1024 * elapsed),
-		},
 	}
 
 	return res

@@ -22,8 +22,6 @@ type JobProducer struct {
 	bytesWritten int64
 	bytesRead    int64
 
-	start time.Time
-
 	mu       sync.Mutex
 	respCode map[int]int
 	respBody map[int][]byte
@@ -41,23 +39,6 @@ func (j *JobProducer) RequestCounts() map[string]int {
 	res := make(map[string]int, len(j.respCode))
 	for code, cnt := range j.respCode {
 		res[strconv.Itoa(code)] = cnt
-	}
-
-	return res
-}
-
-// Metrics return additional stats.
-func (j *JobProducer) Metrics() map[string]map[string]float64 {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-
-	elapsed := time.Since(j.start).Seconds()
-
-	res := map[string]map[string]float64{
-		"Bandwidth, MB/s": {
-			"Read":  float64(j.bytesRead) / (1024 * 1024 * elapsed),
-			"Write": float64(j.bytesWritten) / (1024 * 1024 * elapsed),
-		},
 	}
 
 	return res
