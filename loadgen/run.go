@@ -100,8 +100,17 @@ func Run(lf Flags, jobProducer JobProducer) {
 	}
 
 	go func() {
-		<-r.exit
-		atomic.StoreInt32(&done, 1)
+		for {
+			<-r.exit
+
+			if atomic.LoadInt32(&done) == 1 {
+				os.Exit(1)
+			}
+
+			fmt.Println("Stopping... Press CTRL+C again to force exit.")
+
+			atomic.StoreInt32(&done, 1)
+		}
 	}()
 
 	if lf.LiveUI {

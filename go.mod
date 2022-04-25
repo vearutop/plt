@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/alecthomas/kingpin v2.2.6+incompatible
+	github.com/aws/aws-sdk-go v1.43.45
 	github.com/bool64/dev v0.2.10
 	github.com/gizak/termui/v3 v3.1.0
 	github.com/lucas-clemente/quic-go v0.27.0
@@ -21,6 +22,7 @@ require (
 	github.com/cheekybits/genny v1.0.0 // indirect
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/klauspost/compress v1.15.1 // indirect
 	github.com/marten-seemann/qpack v0.2.1 // indirect
 	github.com/marten-seemann/qtls-go1-16 v0.1.5 // indirect

@@ -165,3 +165,60 @@ Server: nginx/1.14.0 (Ubuntu)
 
 {"recent":[{"addr":{"id":"606f1f90dcdc3"},"edges":3715,"wt":"190.55ms","cpu":"179.03ms","io":"11.52ms","peakMem":"3.52M"},{"addr":{"id":"606f1faf1c5c3"},"edges":3715,"wt":"270.14ms","cpu":"185.62ms","io":"84.52ms","peakMem":"3.52M"},{"addr":{"id":"606f1fc261e9d"},"edges":575,"wt":"3.4s","cpu":"3.39s","io":"9.71ms","peakMem":"28.03M"},{"addr":{"id":"606f1fcd6f694"},"edges":3715,"wt":"153.58ms","cpu":"143.68ms","io":"9.9ms","peakMem":"3.52M"},{"addr":{"id":"606f1feba911d"},"edges":3715,"wt":"202.18ms","cpu":"191.82ms","io":"10.36ms","peakMem":"3.52M"},{"addr":{"id":"606f20052f7c1"},"edges":471,"wt":"679.08ms","cpu":"669.01ms","io":"10.07ms","peakMem":"6.18M"},{"addr":{"id":"606f2009de4cd"},"edges":3715,"wt":"175.34ms","cpu":"163.14ms","io":"12.2ms","peakMem":"3.52M"},{"addr":{"id":"606f2028185dd"},"edges":3715,"wt":"677.03ms","cpu":"320.84ms","io":"356.19ms","peakMem":"3.52M"},{"addr":{"id":"606f2046c16a2"},"edges":3715,"wt":"313.28ms","cpu":"292.38ms","io":"20.9ms","peakMem":"3.52M"},{"...
 ```
+
+## S3 latency
+
+```
+usage: plt s3 --bucket=BUCKET --key=KEY [<flags>]
+
+S3 transfer
+
+Flags:
+  --help                         Show context-sensitive help (also try --help-long and --help-man).
+  --version                      Show application version.
+  --number=1000                  Number of requests to run, 0 is infinite.
+  --concurrency=50               Number of requests to run concurrently.
+  --rate-limit=0                 Rate limit, in requests per second, 0 disables limit (default).
+  --duration=1m                  Max duration of load testing, 0 is infinite.
+  --slow=1s                      Min duration of slow response.
+  --live-ui                      Show live ui with statistics.
+  --access-key=ACCESS-KEY        Access key/id (env AWS_ACCESS_KEY).
+  --secret-key=SECRET-KEY        Secret key (env AWS_SECRET_KEY).
+  --session-token=SESSION-TOKEN  Session token (env AWS_SESSION_TOKEN).
+  --region="eu-central-1"        Region.
+  --url=URL                      Optional S3 URL (if not AWS).
+  --bucket=BUCKET                Bucket name.
+  --key=KEY                      Entry key.
+  --path-style                   To use path-style addressing, i.e., `http://s3.amazonaws.com/BUCKET/KEY`.
+```
+
+```
+./plt --number 1000 --rate-limit 300 s3 --access-key=<redacted> --secret-key=<redacted> --url=ceph.example.com:7480 --bucket=foo --key=bar --path-style
+
+Requests per second: 299.34
+Successful requests: 1000
+Time spent: 3.341s
+
+Request latency percentiles:
+99%: 46.36ms
+95%: 15.99ms
+90%: 9.35ms
+50%: 7.01ms
+
+Request latency distribution in ms:
+[  min   max]  cnt total% (1000 events)
+[ 6.44  6.44]    1  0.10%
+[ 6.49  6.55]    9  0.90%
+[ 6.55  6.66]   43  4.30% ....
+[ 6.66  7.00]  445 44.50% ............................................
+[ 7.00  7.89]  346 34.60% ..................................
+[ 7.93  7.93]    1  0.10%
+[ 7.93 10.39]   70  7.00% .......
+[10.54 13.57]   23  2.30% ..
+[13.65 28.34]   30  3.00% ...
+[30.16 52.90]   32  3.20% ...
+
+Requests with latency more than 1s: 0
+
+Read: total 2600.89 MB, avg 2.60 MB, 778.49 MB/s
+```
