@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -28,6 +27,8 @@ import (
 
 // JobProducer sends HTTP requests.
 type JobProducer struct {
+	PrepareRequest func(i int, req *http.Request) error
+
 	bytesWritten int64
 	writeTime    int64
 	bytesRead    int64
@@ -52,6 +53,8 @@ type JobProducer struct {
 	respBody   map[int][]byte
 	respHeader map[int]http.Header
 	respProto  map[int]string
+
+	log string
 }
 
 // RequestCounts returns distribution by status code.
@@ -171,22 +174,22 @@ func (j *JobProducer) makeTransport3() *http3.RoundTripper {
 }
 
 // NewJobProducer creates HTTP load generator.
-func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
+func NewJobProducer(f Flags, lf loadgen.Flags) (*JobProducer, error) {
 	u, err := url.Parse(f.URL)
 	if err != nil {
-		log.Fatalf("failed to parse URL: %s", err)
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
 	}
 
 	addrs, err := net.LookupHost(u.Hostname())
 	if err != nil {
-		log.Fatalf("failed to resolve URL host: %s", err)
+		return nil, fmt.Errorf("failed to resolve URL host: %w", err)
 	}
-
-	fmt.Println("Host resolved:", strings.Join(addrs, ","))
 
 	j := JobProducer{}
 	j.f = f
 	j.lf = lf
+
+	j.log += fmt.Sprintln("Host resolved:", strings.Join(addrs, ","))
 
 	j.tr = j.makeTransport()
 
@@ -204,19 +207,19 @@ func NewJobProducer(f Flags, lf loadgen.Flags) *JobProducer {
 		f.HeaderMap["User-Agent"] = "plt"
 	}
 
-	return &j
+	return &j, nil
 }
 
-// Print prints results.
-func (j *JobProducer) Print() {
+// String prints results.
+func (j *JobProducer) String() string {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
 	if len(j.respBody) == 0 {
-		return
+		return ""
 	}
 
-	fmt.Println()
+	res := j.log
 
 	bytesRead := atomic.LoadInt64(&j.bytesRead)
 	readTime := atomic.LoadInt64(&j.readTime)
@@ -227,45 +230,45 @@ func (j *JobProducer) Print() {
 	ulSpeed := float64(bytesWritten) / time.Duration(writeTime).Seconds()
 
 	if bytesRead > 0 && bytesWritten > 0 && atomic.LoadInt64(&j.total) > 0 {
-		fmt.Println("Bytes read", report.ByteSize(bytesRead), "total,",
+		res += fmt.Sprintln("Bytes read", report.ByteSize(bytesRead), "total,",
 			report.ByteSize(bytesRead/atomic.LoadInt64(&j.total)), "avg,", report.ByteSize(int64(dlSpeed))+"/s")
-		fmt.Println("Bytes written", report.ByteSize(bytesWritten), "total,",
+		res += fmt.Sprintln("Bytes written", report.ByteSize(bytesWritten), "total,",
 			report.ByteSize(bytesWritten/atomic.LoadInt64(&j.total)), "avg,", report.ByteSize(int64(ulSpeed))+"/s")
-		fmt.Println()
+		res += "\n"
 	}
 
 	if j.upstreamHist.Count > 0 {
-		fmt.Println("Envoy upstream latency percentiles:")
-		fmt.Printf("99%%: %.0fms\n", j.upstreamHistPrecise.Percentile(99))
-		fmt.Printf("95%%: %.0fms\n", j.upstreamHistPrecise.Percentile(95))
-		fmt.Printf("90%%: %.0fms\n", j.upstreamHistPrecise.Percentile(90))
-		fmt.Printf("50%%: %.0fms\n\n", j.upstreamHistPrecise.Percentile(50))
+		res += "Envoy upstream latency percentiles:\n"
+		res += fmt.Sprintf("99%%: %.0fms\n", j.upstreamHistPrecise.Percentile(99))
+		res += fmt.Sprintf("95%%: %.0fms\n", j.upstreamHistPrecise.Percentile(95))
+		res += fmt.Sprintf("90%%: %.0fms\n", j.upstreamHistPrecise.Percentile(90))
+		res += fmt.Sprintf("50%%: %.0fms\n\n", j.upstreamHistPrecise.Percentile(50))
 
-		fmt.Println("Envoy upstream latency distribution in ms:")
-		fmt.Println(j.upstreamHist.String())
+		res += "Envoy upstream latency distribution in ms:\n"
+		res += j.upstreamHist.String() + "\n"
 	}
 
 	if j.dnsHist.Count > 0 {
-		fmt.Println("DNS latency distribution in ms:")
-		fmt.Println(j.dnsHist.String())
+		res += "DNS latency distribution in ms:\n"
+		res += j.dnsHist.String() + "\n"
 	}
 
 	if j.tlsHist.Count > 0 {
-		fmt.Println("TLS handshake latency distribution in ms:")
-		fmt.Println(j.tlsHist.String())
+		res += "TLS handshake latency distribution in ms:\n"
+		res += j.tlsHist.String() + "\n"
 	}
 
 	if j.ttfbHist.Count > 0 {
-		fmt.Println("Time to first resp byte (TTFB) distribution in ms:")
-		fmt.Println(j.ttfbHist.String())
+		res += "Time to first resp byte (TTFB) distribution in ms:\n"
+		res += j.ttfbHist.String() + "\n"
 	}
 
 	if j.connHist.Count > 0 {
-		fmt.Println("Connection latency distribution in ms:")
-		fmt.Println(j.connHist.String())
+		res += "Connection latency distribution in ms:\n"
+		res += j.connHist.String() + "\n"
 	}
 
-	fmt.Println("Responses by status code")
+	res += "Responses by status code\n"
 
 	codes := ""
 	resps := ""
@@ -276,23 +279,25 @@ func (j *JobProducer) Print() {
 
 		err := j.respHeader[code].Write(h)
 		if err != nil {
-			fmt.Println("Failed to render headers:", err)
+			res += fmt.Sprintln("Failed to render headers:", err)
 		}
 
 		resps += fmt.Sprintf("[%s %d]\n%s\n%s\n", j.respProto[code], code, h.String(), string(j.respBody[code]))
 	}
 
-	fmt.Println(codes)
+	res += codes + "\n"
 
-	fmt.Println("Response samples (first by status code):")
-	fmt.Println(resps)
+	res += "Response samples (first by status code):\n"
+	res += resps + "\n"
+
+	return res
 }
 
 // SampleSize is maximum number of bytes to sample from response.
 const SampleSize = 1000
 
 // Job runs single item of load.
-func (j *JobProducer) Job(_ int) (time.Duration, error) {
+func (j *JobProducer) Job(i int) (time.Duration, error) {
 	var start, dnsStart, connStart, tlsStart, dlStart time.Time
 
 	var body io.Reader
@@ -341,6 +346,12 @@ func (j *JobProducer) Job(_ int) (time.Duration, error) {
 		},
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+
+	if j.PrepareRequest != nil {
+		if err := j.PrepareRequest(i, req); err != nil {
+			return 0, fmt.Errorf("failed to prepare request: %w", err)
+		}
+	}
 
 	tr := j.tr
 	// Keep alive flag here.

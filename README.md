@@ -4,6 +4,10 @@
 
 Scale curl requests, cousin of `ab`, `siege`, [`hey`](https://github.com/rakyll/hey).
 
+[![Build Status](https://github.com/vearutop/plt/workflows/test-unit/badge.svg)](https://github.com/vearutop/plt/actions?query=branch%3Amaster+workflow%3Atest-unit)
+[![Coverage Status](https://codecov.io/gh/vearutop/plt/branch/master/graph/badge.svg)](https://codecov.io/gh/vearutop/plt)
+[![GoDevDoc](https://img.shields.io/badge/dev-doc-00ADD8?logo=go)](https://pkg.go.dev/github.com/vearutop/plt)
+[![time tracker](https://wakatime.com/badge/github/vearutop/plt.svg)](https://wakatime.com/badge/github/vearutop/plt)
 ![Code lines](https://sloc.xyz/github/vearutop/plt/?category=code)
 ![Comments](https://sloc.xyz/github/vearutop/plt/?category=comments)
 

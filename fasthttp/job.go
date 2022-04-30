@@ -3,7 +3,6 @@ package fasthttp
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"net/url"
 	"strconv"
@@ -19,6 +18,8 @@ import (
 
 // JobProducer sends HTTP requests.
 type JobProducer struct {
+	PrepareRequest func(i int, req *fasthttp.Request) error
+
 	bytesWritten int64
 	bytesRead    int64
 
@@ -29,6 +30,8 @@ type JobProducer struct {
 	body   []byte
 	f      nethttp.Flags
 	client *fasthttp.Client
+
+	log string
 }
 
 // RequestCounts returns distribution by status code.
@@ -70,24 +73,24 @@ func (c countingConn) Write(b []byte) (n int, err error) {
 }
 
 // NewJobProducer creates load generator.
-func NewJobProducer(f nethttp.Flags) *JobProducer {
+func NewJobProducer(f nethttp.Flags) (*JobProducer, error) {
 	u, err := url.Parse(f.URL)
 	if err != nil {
-		log.Fatalf("failed to parse URL: %s", err)
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
 	}
 
 	addrs, err := net.LookupHost(u.Hostname())
 	if err != nil {
-		log.Fatalf("failed to resolve URL host: %s", err)
+		return nil, fmt.Errorf("failed to resolve URL host: %w", err)
 	}
 
-	fmt.Println("Host resolved:", strings.Join(addrs, ","))
-
 	j := JobProducer{}
+	j.f = f
+
+	j.log += fmt.Sprintln("Host resolved:", strings.Join(addrs, ","))
 
 	j.respCode = make(map[int]int, 5)
 	j.respBody = make(map[int][]byte, 5)
-	j.f = f
 
 	if f.Body != "" {
 		j.body = []byte(f.Body)
@@ -110,16 +113,17 @@ func NewJobProducer(f nethttp.Flags) *JobProducer {
 		j.client.Name = "plt"
 	}
 
-	return &j
+	return &j, nil
 }
 
-// Print reports results.
-func (j *JobProducer) Print() {
+// String reports results.
+func (j *JobProducer) String() string {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
 	codes := ""
 	resps := ""
+	res := j.log
 
 	for code, cnt := range j.respCode {
 		codes += fmt.Sprintf("[%d] %d\n", code, cnt)
@@ -127,22 +131,24 @@ func (j *JobProducer) Print() {
 	}
 
 	if codes == "" {
-		return
+		return ""
 	}
 
-	fmt.Println(codes)
+	res += fmt.Sprintln(codes)
 
-	fmt.Println("Responses by status code")
-	fmt.Println(codes)
+	res += fmt.Sprintln("Responses by status code")
+	res += fmt.Sprintln(codes)
 
-	fmt.Println("Bytes read", report.ByteSize(atomic.LoadInt64(&j.bytesRead)))
-	fmt.Println("Bytes written", report.ByteSize(atomic.LoadInt64(&j.bytesWritten)))
+	res += fmt.Sprintln("Bytes read", report.ByteSize(atomic.LoadInt64(&j.bytesRead)))
+	res += fmt.Sprintln("Bytes written", report.ByteSize(atomic.LoadInt64(&j.bytesWritten)))
 
-	fmt.Println(resps)
+	res += fmt.Sprintln(resps)
+
+	return res
 }
 
 // Job sends a single http request.
-func (j *JobProducer) Job(_ int) (time.Duration, error) {
+func (j *JobProducer) Job(i int) (time.Duration, error) {
 	start := time.Now()
 
 	req := fasthttp.AcquireRequest()
@@ -160,6 +166,12 @@ func (j *JobProducer) Job(_ int) (time.Duration, error) {
 
 	for k, v := range j.f.HeaderMap {
 		req.Header.Set(k, v)
+	}
+
+	if j.PrepareRequest != nil {
+		if err := j.PrepareRequest(i, req); err != nil {
+			return 0, err
+		}
 	}
 
 	err := j.client.Do(req, resp)

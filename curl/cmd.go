@@ -4,6 +4,7 @@ package curl
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"regexp"
@@ -165,22 +166,28 @@ func AddCommand(lf *loadgen.Flags) {
 			!strings.HasPrefix(strings.ToLower(flags.URL), "https://") {
 			flags.URL = "http://" + flags.URL
 		}
-		run(*lf, flags)
 
-		return nil
+		return run(*lf, flags)
 	})
 }
 
-func run(lf loadgen.Flags, f nethttp.Flags) {
+func run(lf loadgen.Flags, f nethttp.Flags) error {
 	lf.Prepare()
 
+	var (
+		j   loadgen.JobProducer
+		err error
+	)
+
 	if f.Fast {
-		j := fasthttp.NewJobProducer(f)
-		loadgen.Run(lf, j)
-		j.Print()
+		if j, err = fasthttp.NewJobProducer(f); err != nil {
+			return fmt.Errorf("failed to init job producer: %w", err)
+		}
 	} else {
-		j := nethttp.NewJobProducer(f, lf)
-		loadgen.Run(lf, j)
-		j.Print()
+		if j, err = nethttp.NewJobProducer(f, lf); err != nil {
+			return fmt.Errorf("failed to init job producer: %w", err)
+		}
 	}
+
+	return loadgen.Run(lf, j)
 }

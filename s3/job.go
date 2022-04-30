@@ -92,11 +92,10 @@ func (j *jobProducer) RequestCounts() map[string]int {
 }
 
 // Print prints additional stats.
-func (j *jobProducer) Print() {
+func (j *jobProducer) String() string {
 	elapsed := time.Since(j.start).Seconds()
 
-	fmt.Println()
-	fmt.Printf("Read: total %.2f MB, avg %.2f MB, %.2f MB/s\n",
+	return fmt.Sprintf("\nRead: total %.2f MB, avg %.2f MB, %.2f MB/s\n",
 		float64(j.totBytes)/(1024*1024),
 		float64(j.totBytes)/float64(1024*1024*j.tot),
 		float64(j.totBytes)/(1024*1024*elapsed))
