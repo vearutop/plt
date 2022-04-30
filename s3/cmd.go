@@ -50,9 +50,5 @@ func run(lf loadgen.Flags, f Flags) error {
 		return err
 	}
 
-	loadgen.Run(lf, j)
-
-	j.Print()
-
-	return nil
+	return loadgen.Run(lf, j)
 }

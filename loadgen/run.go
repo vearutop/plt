@@ -5,7 +5,6 @@ import (
 	"context"
 	"expvar"
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"os/signal"
@@ -48,11 +47,15 @@ type runner struct {
 }
 
 // Run runs load testing.
-func Run(lf Flags, jobProducer JobProducer) {
+func Run(lf Flags, jobProducer JobProducer) error {
 	if lf.LiveUI {
 		if err := ui.Init(); err != nil {
-			log.Fatalf("failed to initialize termui: %v", err)
+			return fmt.Errorf("failed to initialize termui: %w", err)
 		}
+	}
+
+	if lf.Output == nil {
+		lf.Output = os.Stdout
 	}
 
 	r := runner{
@@ -107,7 +110,7 @@ func Run(lf Flags, jobProducer JobProducer) {
 				os.Exit(1)
 			}
 
-			fmt.Println("Stopping... Press CTRL+C again to force exit.")
+			_, _ = fmt.Fprintln(lf.Output, "Stopping... Press CTRL+C again to force exit.")
 
 			atomic.StoreInt32(&done, 1)
 		}
@@ -118,6 +121,8 @@ func Run(lf Flags, jobProducer JobProducer) {
 	}
 
 	for i := 0; i < n; i++ {
+		i := i
+
 		r.mu.Lock()
 		rl := r.rl
 		r.mu.Unlock()
@@ -188,37 +193,40 @@ func Run(lf Flags, jobProducer JobProducer) {
 		ui.Close()
 
 		buf = bytes.Trim(buf, "\n \000")
-		fmt.Println(string(buf))
+		_, _ = fmt.Fprintln(lf.Output, string(buf))
 	}
 
-	fmt.Println()
-	fmt.Println("Requests per second:", fmt.Sprintf("%.2f", float64(r.roundTripHist.Count)/time.Since(r.start).Seconds()))
-	fmt.Println("Successful requests:", r.roundTripHist.Count)
+	_, _ = fmt.Fprintln(lf.Output)
+	_, _ = fmt.Fprintln(lf.Output, "Requests per second:", fmt.Sprintf("%.2f", float64(r.roundTripHist.Count)/time.Since(r.start).Seconds()))
+	_, _ = fmt.Fprintln(lf.Output, "Successful requests:", r.roundTripHist.Count)
 
 	if r.errCnt > 0 {
-		fmt.Printf("Failed requests: %d, last error: %s\n", r.errCnt, r.lastErr.Error())
+		_, _ = fmt.Fprintf(lf.Output, "Failed requests: %d, last error: %s\n", r.errCnt, r.lastErr.Error())
 	}
 
-	fmt.Println("Time spent:", time.Since(r.start).Round(time.Millisecond))
+	_, _ = fmt.Fprintln(lf.Output, "Time spent:", time.Since(r.start).Round(time.Millisecond))
 
 	if r.roundTripHist.Count == 0 {
-		fmt.Println()
-		fmt.Println("All requests failed")
-
-		return
+		return fmt.Errorf("all requests failed: %w", r.lastErr)
 	}
 
-	fmt.Println()
-	fmt.Println("Request latency percentiles:")
-	fmt.Printf("99%%: %.2fms\n", r.roundTripPrecise.Percentile(99))
-	fmt.Printf("95%%: %.2fms\n", r.roundTripPrecise.Percentile(95))
-	fmt.Printf("90%%: %.2fms\n", r.roundTripPrecise.Percentile(90))
-	fmt.Printf("50%%: %.2fms\n\n", r.roundTripPrecise.Percentile(50))
+	_, _ = fmt.Fprintln(lf.Output)
+	_, _ = fmt.Fprintln(lf.Output, "Request latency percentiles:")
+	_, _ = fmt.Fprintf(lf.Output, "99%%: %.2fms\n", r.roundTripPrecise.Percentile(99))
+	_, _ = fmt.Fprintf(lf.Output, "95%%: %.2fms\n", r.roundTripPrecise.Percentile(95))
+	_, _ = fmt.Fprintf(lf.Output, "90%%: %.2fms\n", r.roundTripPrecise.Percentile(90))
+	_, _ = fmt.Fprintf(lf.Output, "50%%: %.2fms\n\n", r.roundTripPrecise.Percentile(50))
 
-	fmt.Println("Request latency distribution in ms:")
-	fmt.Println(r.roundTripHist.String())
+	_, _ = fmt.Fprintln(lf.Output, "Request latency distribution in ms:")
+	_, _ = fmt.Fprintln(lf.Output, r.roundTripHist.String())
 
-	fmt.Println("Requests with latency more than "+lf.SlowResponse.String()+":", slow.Value())
+	_, _ = fmt.Fprintln(lf.Output, "Requests with latency more than "+lf.SlowResponse.String()+":", slow.Value())
+
+	if s, ok := jobProducer.(fmt.Stringer); ok {
+		_, _ = fmt.Fprintln(lf.Output, "\n"+s.String())
+	}
+
+	return nil
 }
 
 func (r *runner) startLiveUIPoller(limiter chan struct{}) {

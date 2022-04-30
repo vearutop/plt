@@ -1,6 +1,9 @@
 package loadgen
 
-import "time"
+import (
+	"io"
+	"time"
+)
 
 // Flags control load testing.
 type Flags struct {
@@ -10,6 +13,8 @@ type Flags struct {
 	Duration     time.Duration
 	SlowResponse time.Duration
 	LiveUI       bool
+
+	Output io.Writer
 }
 
 // Prepare sets conditional defaults.
