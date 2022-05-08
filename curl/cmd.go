@@ -17,7 +17,7 @@ import (
 )
 
 // AddCommand registers curl command into CLI app.
-func AddCommand(lf *loadgen.Flags) {
+func AddCommand(lf *loadgen.Flags, options ...func(lf *loadgen.Flags, f *nethttp.Flags, j loadgen.JobProducer)) {
 	var (
 		flags   nethttp.Flags
 		capture struct {
@@ -167,17 +167,21 @@ func AddCommand(lf *loadgen.Flags) {
 			flags.URL = "http://" + flags.URL
 		}
 
-		return run(*lf, flags)
+		return run(*lf, flags, options...)
 	})
 }
 
-func run(lf loadgen.Flags, f nethttp.Flags) error {
+func run(lf loadgen.Flags, f nethttp.Flags, options ...func(lf *loadgen.Flags, f *nethttp.Flags, j loadgen.JobProducer)) error {
 	lf.Prepare()
 
 	var (
 		j   loadgen.JobProducer
 		err error
 	)
+
+	for _, o := range options {
+		o(&lf, &f, nil)
+	}
 
 	if f.Fast {
 		if j, err = fasthttp.NewJobProducer(f); err != nil {
@@ -187,6 +191,10 @@ func run(lf loadgen.Flags, f nethttp.Flags) error {
 		if j, err = nethttp.NewJobProducer(f, lf); err != nil {
 			return fmt.Errorf("failed to init job producer: %w", err)
 		}
+	}
+
+	for _, o := range options {
+		o(&lf, &f, j)
 	}
 
 	return loadgen.Run(lf, j)

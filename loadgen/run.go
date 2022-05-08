@@ -32,8 +32,12 @@ type runner struct {
 	currentReqRate   int64
 	errCnt           int64
 
+	n   int
+	dur time.Duration
+
 	start time.Time
 	exit  chan os.Signal
+	done  int32
 
 	roundTripHist    dynhist.Collector
 	roundTripRolling dynhist.Collector
@@ -44,83 +48,21 @@ type runner struct {
 	mu      sync.Mutex
 	rl      *rate.Limiter
 	lastErr error
+
+	semaphore chan struct{}
+	slow      expvar.Int
+	lf        Flags
 }
 
 // Run runs load testing.
 func Run(lf Flags, jobProducer JobProducer) error {
-	if lf.LiveUI {
-		if err := ui.Init(); err != nil {
-			return fmt.Errorf("failed to initialize termui: %w", err)
-		}
+	r, err := newRunner(lf, jobProducer)
+	if err != nil {
+		return err
 	}
 
-	if lf.Output == nil {
-		lf.Output = os.Stdout
-	}
-
-	r := runner{
-		jobProducer:      jobProducer,
-		roundTripHist:    dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth},
-		roundTripRolling: dynhist.Collector{BucketsLimit: 5, WeightFunc: dynhist.LatencyWidth},
-		roundTripPrecise: dynhist.Collector{BucketsLimit: 100, WeightFunc: dynhist.LatencyWidth},
-	}
-
-	r.concurrencyLimit = int64(lf.Concurrency) // Number of simultaneous jobs.
-	if r.concurrencyLimit <= 0 {
-		r.concurrencyLimit = 50
-	}
-
-	semaphore := make(chan struct{}, maxConcurrency)
-	for i := 0; int64(i) < maxConcurrency-r.concurrencyLimit; i++ {
-		semaphore <- struct{}{}
-	}
-
-	r.start = time.Now()
-	slow := expvar.Int{}
-
-	n := lf.Number
-	if n <= 0 {
-		n = math.MaxInt32
-	}
-
-	dur := lf.Duration
-	if dur == 0 {
-		dur = 1000 * time.Hour
-	}
-
-	if lf.RateLimit > 0 {
-		r.rateLimit = int64(lf.RateLimit)
-		r.rl = rate.NewLimiter(rate.Limit(lf.RateLimit), 1)
-	}
-
-	r.exit = make(chan os.Signal, 1)
-	signal.Notify(r.exit, syscall.SIGTERM, os.Interrupt)
-
-	done := int32(0)
-
-	if lf.LiveUI {
-		go r.startLiveUIPoller(semaphore)
-	}
-
-	go func() {
-		for {
-			<-r.exit
-
-			if atomic.LoadInt32(&done) == 1 {
-				os.Exit(1)
-			}
-
-			_, _ = fmt.Fprintln(lf.Output, "Stopping... Press CTRL+C again to force exit.")
-
-			atomic.StoreInt32(&done, 1)
-		}
-	}()
-
-	if lf.LiveUI {
-		go r.runLiveUI()
-	}
-
-	for i := 0; i < n; i++ {
+	// Main loop.
+	for i := 0; i < r.n; i++ {
 		i := i
 
 		r.mu.Lock()
@@ -135,11 +77,11 @@ func Run(lf Flags, jobProducer JobProducer) error {
 				r.mu.Unlock()
 			}
 		}
-		semaphore <- struct{}{} // Acquire semaphore slot.
+		r.semaphore <- struct{}{} // Acquire semaphore slot.
 
 		go func() {
 			defer func() {
-				<-semaphore // Release semaphore slot.
+				<-r.semaphore // Release semaphore slot.
 			}()
 
 			elapsed, err := jobProducer.Job(i)
@@ -156,7 +98,7 @@ func Run(lf Flags, jobProducer JobProducer) error {
 			ms := elapsed.Seconds() * 1000
 
 			if elapsed >= lf.SlowResponse {
-				slow.Add(1)
+				r.slow.Add(1)
 			}
 
 			r.roundTripHist.Add(ms)
@@ -164,44 +106,105 @@ func Run(lf Flags, jobProducer JobProducer) error {
 			r.roundTripRolling.Add(ms)
 		}()
 
-		if time.Since(r.start) > dur || atomic.LoadInt32(&done) == 1 {
+		if time.Since(r.start) > r.dur || atomic.LoadInt32(&r.done) == 1 {
 			break
 		}
 	}
 
 	// Wait for goroutines to finish by filling full channel.
 	for i := 0; int64(i) < atomic.LoadInt64(&r.concurrencyLimit); i++ {
-		semaphore <- struct{}{}
+		r.semaphore <- struct{}{}
 	}
+
+	return r.report()
+}
+
+func newRunner(lf Flags, jobProducer JobProducer) (*runner, error) {
+	if lf.LiveUI {
+		if err := ui.Init(); err != nil {
+			return nil, fmt.Errorf("failed to initialize termui: %w", err)
+		}
+	}
+
+	if lf.Output == nil {
+		lf.Output = os.Stdout
+	}
+
+	r := runner{
+		jobProducer:      jobProducer,
+		roundTripHist:    dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth},
+		roundTripRolling: dynhist.Collector{BucketsLimit: 5, WeightFunc: dynhist.LatencyWidth},
+		roundTripPrecise: dynhist.Collector{BucketsLimit: 100, WeightFunc: dynhist.LatencyWidth},
+		lf:               lf,
+	}
+
+	r.concurrencyLimit = int64(lf.Concurrency) // Number of simultaneous jobs.
+	if r.concurrencyLimit <= 0 {
+		r.concurrencyLimit = 50
+	}
+
+	r.semaphore = make(chan struct{}, maxConcurrency)
+	for i := 0; int64(i) < maxConcurrency-r.concurrencyLimit; i++ {
+		r.semaphore <- struct{}{}
+	}
+
+	r.start = time.Now()
+
+	r.n = lf.Number
+	if r.n <= 0 {
+		r.n = math.MaxInt32
+	}
+
+	r.dur = lf.Duration
+	if r.dur == 0 {
+		r.dur = 1000 * time.Hour
+	}
+
+	if lf.RateLimit > 0 {
+		r.rateLimit = int64(lf.RateLimit)
+		r.rl = rate.NewLimiter(rate.Limit(lf.RateLimit), 1)
+	}
+
+	r.exit = make(chan os.Signal, 1)
+	signal.Notify(r.exit, syscall.SIGTERM, os.Interrupt)
 
 	if lf.LiveUI {
-		var buf []byte
+		go r.startLiveUIPoller()
+		go r.runLiveUI()
+	}
 
-		w, h := termbox.Size()
+	go func() {
+		for {
+			<-r.exit
 
-		for y := 0; y < h; y++ {
-			for x := 0; x < w; x++ {
-				c := termbox.GetCell(x, y)
-
-				buf = append(buf, []byte(string(c.Ch))...)
+			if atomic.LoadInt32(&r.done) == 1 {
+				os.Exit(1)
 			}
 
-			buf = bytes.Trim(buf, "\n \000")
-			buf = append(buf, '\n')
+			if !lf.LiveUI {
+				_, _ = fmt.Fprintln(lf.Output, "Stopping... Press CTRL+C again to force exit.")
+			}
+
+			atomic.StoreInt32(&r.done, 1)
 		}
+	}()
 
-		ui.Close()
+	return &r, nil
+}
 
-		buf = bytes.Trim(buf, "\n \000")
-		_, _ = fmt.Fprintln(lf.Output, string(buf))
-	}
+func (r *runner) report() error {
+	lf := r.lf
+
+	r.captureLiveUI()
 
 	_, _ = fmt.Fprintln(lf.Output)
 	_, _ = fmt.Fprintln(lf.Output, "Requests per second:", fmt.Sprintf("%.2f", float64(r.roundTripHist.Count)/time.Since(r.start).Seconds()))
 	_, _ = fmt.Fprintln(lf.Output, "Successful requests:", r.roundTripHist.Count)
 
-	if r.errCnt > 0 {
-		_, _ = fmt.Fprintf(lf.Output, "Failed requests: %d, last error: %s\n", r.errCnt, r.lastErr.Error())
+	if atomic.LoadInt64(&r.errCnt) > 0 {
+		e := r.lastErr.Error()
+		cnt := r.errCnt
+		_, _ = fmt.Fprintf(lf.Output, "Failed requests: %d, last error: %s\n", cnt, e)
 	}
 
 	_, _ = fmt.Fprintln(lf.Output, "Time spent:", time.Since(r.start).Round(time.Millisecond))
@@ -220,88 +223,130 @@ func Run(lf Flags, jobProducer JobProducer) error {
 	_, _ = fmt.Fprintln(lf.Output, "Request latency distribution in ms:")
 	_, _ = fmt.Fprintln(lf.Output, r.roundTripHist.String())
 
-	_, _ = fmt.Fprintln(lf.Output, "Requests with latency more than "+lf.SlowResponse.String()+":", slow.Value())
+	_, _ = fmt.Fprintln(lf.Output, "Requests with latency more than "+lf.SlowResponse.String()+":", r.slow.Value())
 
-	if s, ok := jobProducer.(fmt.Stringer); ok {
+	if s, ok := r.jobProducer.(fmt.Stringer); ok {
 		_, _ = fmt.Fprintln(lf.Output, "\n"+s.String())
 	}
 
 	return nil
 }
 
-func (r *runner) startLiveUIPoller(limiter chan struct{}) {
-	refreshRateLimiter := func() {
-		lim := atomic.LoadInt64(&r.rateLimit)
-		if lim == 0 {
-			return
-		}
+func (r *runner) captureLiveUI() {
+	lf := r.lf
 
-		rl := rate.NewLimiter(rate.Limit(lim), 1)
-
-		r.mu.Lock()
-		r.rl = rl
-		r.mu.Unlock()
+	if !lf.LiveUI {
+		return
 	}
 
-	rateLimit := func() int64 {
-		lim := atomic.LoadInt64(&r.rateLimit)
+	var buf []byte
 
-		if lim == 0 {
-			lim = atomic.LoadInt64(&r.currentReqRate)
+	w, h := termbox.Size()
+
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			c := termbox.GetCell(x, y)
+
+			buf = append(buf, []byte(string(c.Ch))...)
 		}
 
-		return lim
+		buf = bytes.Trim(buf, "\n \000")
+		buf = append(buf, '\n')
 	}
 
+	ui.Close()
+
+	buf = bytes.Trim(buf, "\n \000")
+	_, _ = fmt.Fprintln(lf.Output, string(buf))
+}
+
+func (r *runner) increaseConcurrency() {
+	lim := atomic.LoadInt64(&r.concurrencyLimit)
+	delta := int64(0.05 * float64(lim))
+
+	if lim+delta <= maxConcurrency {
+		atomic.AddInt64(&r.concurrencyLimit, delta)
+
+		for i := int64(0); i < delta; i++ {
+			<-r.semaphore
+		}
+	}
+}
+
+func (r *runner) decreaseConcurrency() {
+	lim := atomic.LoadInt64(&r.concurrencyLimit)
+	delta := int64(0.05 * float64(lim))
+
+	if lim-delta > 0 {
+		atomic.AddInt64(&r.concurrencyLimit, -delta)
+
+		for i := int64(0); i < delta; i++ {
+			r.semaphore <- struct{}{}
+		}
+	}
+}
+
+func (r *runner) getRateLimit() int64 {
+	lim := atomic.LoadInt64(&r.rateLimit)
+
+	if lim == 0 {
+		lim = atomic.LoadInt64(&r.currentReqRate)
+	}
+
+	return lim
+}
+
+func (r *runner) refreshRateLimiter() {
+	lim := atomic.LoadInt64(&r.rateLimit)
+	if lim == 0 {
+		return
+	}
+
+	rl := rate.NewLimiter(rate.Limit(lim), 1)
+
+	r.mu.Lock()
+	r.rl = rl
+	r.mu.Unlock()
+}
+
+func (r *runner) increaseRateLimit() {
+	lim := r.getRateLimit()
+
+	delta := int64(0.05 * float64(lim))
+	if delta < 1 {
+		delta = 1
+	}
+
+	atomic.StoreInt64(&r.rateLimit, lim+delta)
+	r.refreshRateLimiter()
+}
+
+func (r *runner) decreaseRateLimit() {
+	lim := r.getRateLimit()
+
+	delta := int64(0.05 * float64(lim))
+	if delta < 1 {
+		delta = 1
+	}
+
+	atomic.StoreInt64(&r.rateLimit, lim-delta)
+	r.refreshRateLimiter()
+}
+
+func (r *runner) startLiveUIPoller() {
 	uiEvents := ui.PollEvents()
 	for e := range uiEvents {
 		switch e.ID {
 		case "q", "<C-c>":
 			r.exit <- os.Interrupt
-		case "<Right>": // Increase concurrency.
-			lim := atomic.LoadInt64(&r.concurrencyLimit)
-			delta := int64(0.05 * float64(lim))
-
-			if lim+delta <= maxConcurrency {
-				atomic.AddInt64(&r.concurrencyLimit, delta)
-
-				for i := int64(0); i < delta; i++ {
-					<-limiter
-				}
-			}
-		case "<Left>": // Decrease concurrency.
-			lim := atomic.LoadInt64(&r.concurrencyLimit)
-			delta := int64(0.05 * float64(lim))
-
-			if lim-delta > 0 {
-				atomic.AddInt64(&r.concurrencyLimit, -delta)
-
-				for i := int64(0); i < delta; i++ {
-					limiter <- struct{}{}
-				}
-			}
-
-		case "<Up>": // Increase rate limit.
-			lim := rateLimit()
-
-			delta := int64(0.05 * float64(lim))
-			if delta < 1 {
-				delta = 1
-			}
-
-			atomic.StoreInt64(&r.rateLimit, lim+delta)
-			refreshRateLimiter()
-
-		case "<Down>": // Decrease rate limit.
-			lim := rateLimit()
-
-			delta := int64(0.05 * float64(lim))
-			if delta < 1 {
-				delta = 1
-			}
-
-			atomic.StoreInt64(&r.rateLimit, lim-delta)
-			refreshRateLimiter()
+		case "<Right>":
+			r.increaseConcurrency()
+		case "<Left>":
+			r.decreaseConcurrency()
+		case "<Up>":
+			r.increaseRateLimit()
+		case "<Down>":
+			r.decreaseRateLimit()
 		}
 	}
 }
@@ -377,7 +422,6 @@ func (r *runner) runLiveUI() {
 		r.mu.Lock()
 		if r.lastErr != nil {
 			lastErr = "ERR: " + r.lastErr.Error()
-			r.lastErr = nil
 		}
 		r.mu.Unlock()
 
