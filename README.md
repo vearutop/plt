@@ -55,16 +55,29 @@ Commands:
     Repetitive HTTP transfer
 ```
 
-You can "copy as cURL" in your browser and then prepend that with `plt` to throw 1000 of such requests. 
+You can "copy as cURL" in your browser and then prepend that with `plt` to throw 1000 of such requests.
 
-For even better performance you can use `plt curl --fast` that will employ awesome [fasthttp](https://github.com/valyala/fasthttp)
+For even better performance you can use `plt curl --fast` that will employ
+awesome [fasthttp](https://github.com/valyala/fasthttp)
 as transport. This mode lacks detailed breakdown of latencies, but can push request rate to the limit.
 
 Use `--http2` or `--http3` for HTTP/2 or HTTP/3.
 
-If the server is wrapped with Envoy proxy, upstream latency distribution will be collected from the values of [`X-Envoy-Upstream-Service-Time`](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/router_filter#x-envoy-upstream-service-time) response header.
+If the server is wrapped with Envoy proxy, upstream latency distribution will be collected from the values
+of [`X-Envoy-Upstream-Service-Time`](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/router_filter#x-envoy-upstream-service-time)
+response header.
 
 In `--live-ui` mode you can control concurrency and rate limits with arrow keys.
+
+## Sending different requests
+
+Sending same request over and over again is not very useful in some cases. It may hit caches or be blocked by the
+server. However, describing dynamic requests with predefined parameters is very difficult in general that's why `plt`
+does not attempt to provide such functionality.
+
+Instead, you can extend `plt` with your own custom request preparer written in Go and having full control and
+flexibility with familiar API. Please check an [example](./_examples/cplt/cplt.go) of customization with dynamic
+requests.
 
 ## Example
 
