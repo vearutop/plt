@@ -264,6 +264,10 @@ func (r *runner) increaseConcurrency() {
 	lim := atomic.LoadInt64(&r.concurrencyLimit)
 	delta := int64(0.05 * float64(lim))
 
+	if delta == 0 {
+		delta = 1
+	}
+
 	if lim+delta <= maxConcurrency {
 		atomic.AddInt64(&r.concurrencyLimit, delta)
 
@@ -276,6 +280,10 @@ func (r *runner) increaseConcurrency() {
 func (r *runner) decreaseConcurrency() {
 	lim := atomic.LoadInt64(&r.concurrencyLimit)
 	delta := int64(0.05 * float64(lim))
+
+	if delta == 0 {
+		delta = 1
+	}
 
 	if lim-delta > 0 {
 		atomic.AddInt64(&r.concurrencyLimit, -delta)
@@ -313,7 +321,7 @@ func (r *runner) increaseRateLimit() {
 	lim := r.getRateLimit()
 
 	delta := int64(0.05 * float64(lim))
-	if delta < 1 {
+	if delta == 0 {
 		delta = 1
 	}
 
@@ -325,7 +333,7 @@ func (r *runner) decreaseRateLimit() {
 	lim := r.getRateLimit()
 
 	delta := int64(0.05 * float64(lim))
-	if delta < 1 {
+	if delta == 0 {
 		delta = 1
 	}
 
