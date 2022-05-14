@@ -2,6 +2,8 @@ package s3
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -70,10 +72,26 @@ func (nopWriterAt) WriteAt(p []byte, off int64) (n int, err error) {
 	return len(p), nil
 }
 
-func (j *jobProducer) Job(_ int) (time.Duration, error) {
+func (j *jobProducer) Job(i int) (time.Duration, error) {
 	start := time.Now()
+	w := io.WriterAt(nopWriterAt{})
 
-	n, err := j.dl.Download(nopWriterAt{}, &s3.GetObjectInput{
+	if i == 0 && j.f.Save != "" {
+		f, err := os.Create(j.f.Save)
+		if err != nil {
+			return 0, fmt.Errorf("failed to create file to save S3 result: %w", err)
+		}
+
+		w = f
+
+		defer func() {
+			if err := f.Close(); err != nil {
+				println("failed to close file:", err)
+			}
+		}()
+	}
+
+	n, err := j.dl.Download(w, &s3.GetObjectInput{
 		Bucket: aws.String(j.f.Bucket),
 		Key:    aws.String(j.f.Key),
 	})
