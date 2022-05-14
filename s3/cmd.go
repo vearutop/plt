@@ -16,6 +16,8 @@ type Flags struct {
 	Bucket       string
 	Key          string
 	PathStyle    bool
+
+	Save string
 }
 
 // AddCommand registers curl command into CLI app.
@@ -36,6 +38,8 @@ func AddCommand(lf *loadgen.Flags) {
 	s3.Flag("key", "Entry key.").Required().StringVar(&f.Key)
 	s3.Flag("path-style", "To use path-style addressing, i.e., `http://s3.amazonaws.com/BUCKET/KEY`.").
 		BoolVar(&f.PathStyle)
+
+	s3.Flag("save", "Path to local file to save the entry.").StringVar(&f.Save)
 
 	s3.Action(func(kp *kingpin.ParseContext) error {
 		return run(*lf, f)
