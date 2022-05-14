@@ -76,19 +76,19 @@ func (j *jobProducer) Job(i int) (time.Duration, error) {
 	start := time.Now()
 	w := io.WriterAt(nopWriterAt{})
 
-	if i == 0 {
-		if j.f.Save != "" {
-			if f, err := os.Create(j.f.Save); err != nil {
-				return 0, fmt.Errorf("failed to create file to save S3 result: %w", err)
-			} else {
-				w = f
-				defer func() {
-					if err := f.Close(); err != nil {
-						println("failed to close file:", err)
-					}
-				}()
-			}
+	if i == 0 && j.f.Save != "" {
+		f, err := os.Create(j.f.Save)
+		if err != nil {
+			return 0, fmt.Errorf("failed to create file to save S3 result: %w", err)
 		}
+
+		w = f
+
+		defer func() {
+			if err := f.Close(); err != nil {
+				println("failed to close file:", err)
+			}
+		}()
 	}
 
 	n, err := j.dl.Download(w, &s3.GetObjectInput{
