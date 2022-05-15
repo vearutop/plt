@@ -48,11 +48,11 @@ func newJobProducer(f Flags) (*jobProducer, error) {
 		return nil, err
 	}
 
-	dl := s3manager.NewDownloader(sess)
-
 	return &jobProducer{
-		f:     f,
-		dl:    dl,
+		f:  f,
+		dl: s3manager.NewDownloader(sess),
+		ul: s3manager.NewUploader(sess),
+
 		start: time.Now(),
 	}, nil
 }
@@ -60,6 +60,7 @@ func newJobProducer(f Flags) (*jobProducer, error) {
 type jobProducer struct {
 	f  Flags
 	dl *s3manager.Downloader
+	ul *s3manager.Uploader
 
 	totBytes int64
 	tot      int64
@@ -73,13 +74,33 @@ func (nopWriterAt) WriteAt(p []byte, off int64) (n int, err error) {
 }
 
 func (j *jobProducer) Job(i int) (time.Duration, error) {
-	start := time.Now()
+	var (
+		start = time.Now()
+		err   error
+	)
+
+	if j.f.Upload != "" {
+		err = j.upload(i)
+	} else {
+		err = j.download(i)
+	}
+
+	if err != nil {
+		return 0, err
+	}
+
+	atomic.AddInt64(&j.tot, 1)
+
+	return time.Since(start), nil
+}
+
+func (j *jobProducer) download(i int) error {
 	w := io.WriterAt(nopWriterAt{})
 
 	if i == 0 && j.f.Save != "" {
 		f, err := os.Create(j.f.Save)
 		if err != nil {
-			return 0, fmt.Errorf("failed to create file to save S3 result: %w", err)
+			return fmt.Errorf("failed to create file to save S3 result: %w", err)
 		}
 
 		w = f
@@ -96,13 +117,36 @@ func (j *jobProducer) Job(i int) (time.Duration, error) {
 		Key:    aws.String(j.f.Key),
 	})
 	if err != nil {
-		return 0, fmt.Errorf("failed to download file: %w", err)
+		return fmt.Errorf("failed to download file: %w", err)
 	}
 
 	atomic.AddInt64(&j.totBytes, n)
-	atomic.AddInt64(&j.tot, 1)
 
-	return time.Since(start), nil
+	return nil
+}
+
+func (j *jobProducer) upload(_ int) error {
+	f, err := os.Open(j.f.Upload)
+	if err != nil {
+		return fmt.Errorf("failed to open file to upload: %w", err)
+	}
+
+	defer func() {
+		if err := f.Close(); err != nil {
+			println("failed to close file:", err)
+		}
+	}()
+
+	_, err = j.ul.Upload(&s3manager.UploadInput{
+		Bucket: aws.String(j.f.Bucket),
+		Key:    aws.String(j.f.Key),
+		Body:   f,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to upload file to S3: %w", err)
+	}
+
+	return nil
 }
 
 func (j *jobProducer) RequestCounts() map[string]int {
@@ -111,6 +155,10 @@ func (j *jobProducer) RequestCounts() map[string]int {
 
 // Print prints additional stats.
 func (j *jobProducer) String() string {
+	if j.totBytes == 0 {
+		return ""
+	}
+
 	elapsed := time.Since(j.start).Seconds()
 
 	return fmt.Sprintf("\nRead: total %.2f MB, avg %.2f MB, %.2f MB/s\n",

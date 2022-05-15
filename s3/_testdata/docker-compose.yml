@@ -1,0 +1,17 @@
+# Start minio server with docker-compose up and run
+#  plt s3 --bucket=default --key=foo --number=100 --url=http://localhost:9000 --access-key=minio --secret-key=minio123 --path-style --upload=docker-compose.yml
+#  plt s3 --bucket=default --key=foo --number=100 --url=http://localhost:9000 --access-key=minio --secret-key=minio123 --path-style
+# to test plt against local S3.
+
+services:
+  s3:
+    image: minio/minio:latest
+    environment:
+      SERVICES: s3
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: minio123
+    ports:
+      - '9000:9000'
+    entrypoint: sh
+    # Creating "default" bucket and starting server.
+    command: -c 'mkdir -p /data/default && minio server /data'
