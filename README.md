@@ -207,6 +207,8 @@ Flags:
   --bucket=BUCKET                Bucket name.
   --key=KEY                      Entry key.
   --path-style                   To use path-style addressing, i.e., `http://s3.amazonaws.com/BUCKET/KEY`.
+  --save=SAVE                    Path to local file to save the entry.
+  --upload=UPLOAD                Path to local file to upload to S3, enables upload load testing.
 ```
 
 ```

@@ -17,7 +17,8 @@ type Flags struct {
 	Key          string
 	PathStyle    bool
 
-	Save string
+	Save   string
+	Upload string
 }
 
 // AddCommand registers curl command into CLI app.
@@ -40,6 +41,7 @@ func AddCommand(lf *loadgen.Flags) {
 		BoolVar(&f.PathStyle)
 
 	s3.Flag("save", "Path to local file to save the entry.").StringVar(&f.Save)
+	s3.Flag("upload", "Path to local file to upload to S3, enables upload load testing.").StringVar(&f.Upload)
 
 	s3.Action(func(kp *kingpin.ParseContext) error {
 		return run(*lf, f)
