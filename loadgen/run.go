@@ -413,6 +413,10 @@ func (r *runner) runLiveUI() {
 		drawables = append(drawables, latencyPercentiles)
 
 		counts := r.jobProducer.RequestCounts()
+		if counts == nil {
+			counts = make(map[string]int, 1)
+		}
+
 		counts["tot"] = r.roundTripHist.Count
 
 		if errCnt := atomic.LoadInt64(&r.errCnt); errCnt != 0 {

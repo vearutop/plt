@@ -37,6 +37,8 @@ linters:
     - paralleltest
     - forbidigo
     - exhaustivestruct
+    - exhaustruct
+    - nonamedreturns
     - interfacer # deprecated
     - forcetypeassert
     - scopelint # deprecated
