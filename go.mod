@@ -5,7 +5,7 @@ go 1.17
 require (
 	github.com/alecthomas/kingpin v2.2.6+incompatible
 	github.com/aws/aws-sdk-go v1.44.4
-	github.com/bool64/dev v0.2.10
+	github.com/bool64/dev v0.2.11
 	github.com/gizak/termui/v3 v3.1.0
 	github.com/lucas-clemente/quic-go v0.27.0
 	github.com/nsf/termbox-go v1.1.1
