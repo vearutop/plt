@@ -14,7 +14,7 @@ type Flags struct {
 	SlowResponse time.Duration
 	LiveUI       bool
 
-	// nolint:godox // Soon to be implemented.
+	//nolint:godox // Soon to be implemented.
 	// Automated stress testing flags.
 	// TODO implement support.
 	// TargetLatency    time.Duration // When this latency is exceeded, request rate is reduced.

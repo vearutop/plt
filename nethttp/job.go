@@ -7,7 +7,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -149,7 +148,7 @@ func (j *JobProducer) makeTransport2() *http2.Transport {
 		AllowHTTP:          true,
 	}
 
-	t.DialTLS = func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+	t.DialTLSContext = func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
 		c, err := tls.DialWithDialer(new(net.Dialer), network, addr, cfg)
 		if err != nil {
 			return c, err
@@ -167,7 +166,7 @@ func (j *JobProducer) makeTransport2() *http2.Transport {
 func (j *JobProducer) makeTransport3() *http3.RoundTripper {
 	return &http3.RoundTripper{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, // nolint:gosec // Allow insecure mode in a dev tool.
+			InsecureSkipVerify: true, //nolint:gosec // Allow insecure mode in a dev tool.
 		},
 		DisableCompression: true,
 	}
@@ -401,7 +400,7 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 		j.mu.Unlock()
 	}
 
-	_, err = io.Copy(ioutil.Discard, resp.Body)
+	_, err = io.Copy(io.Discard, resp.Body)
 	if err != nil {
 		return 0, err
 	}
