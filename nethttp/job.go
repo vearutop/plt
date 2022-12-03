@@ -17,7 +17,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lucas-clemente/quic-go/http3"
 	"github.com/vearutop/dynhist-go"
 	"github.com/vearutop/plt/loadgen"
 	"github.com/vearutop/plt/report"
@@ -161,15 +160,6 @@ func (j *JobProducer) makeTransport2() *http2.Transport {
 	}
 
 	return t
-}
-
-func (j *JobProducer) makeTransport3() *http3.RoundTripper {
-	return &http3.RoundTripper{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // Allow insecure mode in a dev tool.
-		},
-		DisableCompression: true,
-	}
 }
 
 // NewJobProducer creates HTTP load generator.

@@ -51,7 +51,11 @@ func AddCommand(lf *loadgen.Flags, options ...func(lf *loadgen.Flags, f *nethttp
 	curl := kingpin.Command("curl", "Repetitive HTTP transfer")
 
 	curl.Flag("fast", "Use fasthttp to achieve higher request rate").BoolVar(&flags.Fast)
-	curl.Flag("http3", "Use quic-go http3").BoolVar(&flags.HTTP3)
+
+	if nethttp.HTTP3Available {
+		curl.Flag("http3", "Use quic-go http3").BoolVar(&flags.HTTP3)
+	}
+
 	curl.Flag("2.0", `Workaround of Firefox "Copy as cURL" incompatibility.`).Bool()
 	curl.Arg("url", "The URL.").StringVar(&flags.URL)
 
