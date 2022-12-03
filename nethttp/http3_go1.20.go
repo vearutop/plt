@@ -8,5 +8,5 @@ import "net/http"
 const HTTP3Available = false
 
 func (j *JobProducer) makeTransport3() http.RoundTripper {
-	nil
+	return nil
 }
