@@ -1,12 +1,10 @@
-//go:build !go1.20
-
 package nethttp
 
 import (
 	"crypto/tls"
 	"net/http"
 
-	"github.com/lucas-clemente/quic-go/http3"
+	"github.com/quic-go/quic-go/http3"
 )
 
 // HTTP3Available guards HTTP3 library.

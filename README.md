@@ -31,6 +31,13 @@ $(go env GOPATH)/bin/plt --help
 
 Or download binary from [releases](https://github.com/vearutop/plt/releases).
 
+### Linux AMD64
+
+```
+wget https://github.com/vearutop/plt/releases/latest/download/linux_amd64.tar.gz && tar xf linux_amd64.tar.gz && rm linux_amd64.tar.gz
+./plt -version
+```
+
 ## Usage
 
 ```
