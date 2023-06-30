@@ -22,19 +22,12 @@ go install github.com/vearutop/plt@latest
 $(go env GOPATH)/bin/plt --help
 ```
 
-Or (with `go1.15` or older)
-
-```
-go get -u github.com/vearutop/plt
-$(go env GOPATH)/bin/plt --help
-```
-
 Or download binary from [releases](https://github.com/vearutop/plt/releases).
 
 ### Linux AMD64
 
 ```
-wget https://github.com/vearutop/plt/releases/latest/download/linux_amd64.tar.gz && tar xf linux_amd64.tar.gz && rm linux_amd64.tar.gz
+wget -q https://github.com/vearutop/plt/releases/latest/download/linux_amd64.tar.gz && tar xf linux_amd64.tar.gz && rm linux_amd64.tar.gz
 ./plt -version
 ```
 
@@ -68,7 +61,7 @@ For even better performance you can use `plt curl --fast` that will employ
 awesome [fasthttp](https://github.com/valyala/fasthttp)
 as transport. This mode lacks detailed breakdown of latencies, but can push request rate to the limit.
 
-Use `--http2` or `--http3` for HTTP/2 or HTTP/3.
+Use `--http2` for HTTP/2 or `--http3` for HTTP/3 (go1.19 or later).
 
 If the server is wrapped with Envoy proxy, upstream latency distribution will be collected from the values
 of [`X-Envoy-Upstream-Service-Time`](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/router_filter#x-envoy-upstream-service-time)
