@@ -1,6 +1,6 @@
 module github.com/vearutop/plt
 
-go 1.18
+go 1.17
 
 require (
 	github.com/alecthomas/kingpin v2.2.6+incompatible
@@ -11,7 +11,7 @@ require (
 	github.com/quic-go/quic-go v0.36.0
 	github.com/stretchr/testify v1.8.4
 	github.com/valyala/fasthttp v1.48.0
-	github.com/vearutop/dynhist-go v1.0.0
+	github.com/vearutop/dynhist-go v1.2.2
 	golang.org/x/net v0.11.0
 	golang.org/x/time v0.3.0
 )
@@ -26,6 +26,7 @@ require (
 	github.com/google/pprof v0.0.0-20230602150820-91b7bce49751 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/klauspost/compress v1.16.6 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/mitchellh/go-wordwrap v0.0.0-20150314170334-ad45545899c7 // indirect
 	github.com/onsi/ginkgo/v2 v2.11.0 // indirect
@@ -41,5 +42,6 @@ require (
 	golang.org/x/sys v0.9.0 // indirect
 	golang.org/x/text v0.10.0 // indirect
 	golang.org/x/tools v0.10.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
