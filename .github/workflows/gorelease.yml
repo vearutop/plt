@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: 1.19.x
+  GO_VERSION: 1.20.x
 jobs:
   gorelease:
     runs-on: ubuntu-latest
@@ -40,6 +40,7 @@ jobs:
         id: gorelease
         run: |
           test -e ~/go/bin/gorelease || go install golang.org/x/exp/cmd/gorelease@97b1e661b5df
+          go mod tidy
           OUTPUT=$(gorelease 2>&1 || exit 0)
           echo "${OUTPUT}"
           echo "report<<EOF" >> $GITHUB_OUTPUT && echo "$OUTPUT" >> $GITHUB_OUTPUT && echo "EOF" >> $GITHUB_OUTPUT
