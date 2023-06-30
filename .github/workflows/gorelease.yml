@@ -35,14 +35,11 @@ jobs:
         with:
           path: |
             ~/go/bin/gorelease
-          key: ${{ runner.os }}-gorelease-latest
-      - name: Get gorelease
-        run: |
-          test -e ~/go/bin/gorelease || go install golang.org/x/exp/cmd/gorelease@latest
+          key: ${{ runner.os }}-gorelease-2e198f4a06a1
       - name: Gorelease
         id: gorelease
         run: |
-          git reset --hard
+          test -e ~/go/bin/gorelease || go install golang.org/x/exp/cmd/gorelease@2e198f4a06a1
           OUTPUT=$(gorelease 2>&1 || exit 0)
           echo "${OUTPUT}"
           echo "report<<EOF" >> $GITHUB_OUTPUT && echo "$OUTPUT" >> $GITHUB_OUTPUT && echo "EOF" >> $GITHUB_OUTPUT
