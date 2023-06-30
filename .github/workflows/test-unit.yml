@@ -21,7 +21,7 @@ jobs:
   test:
     strategy:
       matrix:
-        go-version: [ 1.18.x, 1.19.x, 1.20.x ]
+        go-version: [ 1.18.x, 1.19.x, 1.20.x, tip ]
     runs-on: ubuntu-latest
     steps:
       - name: Install Go stable
