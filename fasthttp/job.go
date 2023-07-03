@@ -108,6 +108,7 @@ func NewJobProducer(f nethttp.Flags) (*JobProducer, error) {
 			Conn: c,
 		}, nil
 	}
+	j.client.MaxConnsPerHost = 10000
 
 	if _, ok := f.HeaderMap["User-Agent"]; !ok {
 		j.client.Name = "plt"
