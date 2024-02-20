@@ -69,7 +69,7 @@ type jobProducer struct {
 
 type nopWriterAt struct{}
 
-func (nopWriterAt) WriteAt(p []byte, off int64) (n int, err error) {
+func (nopWriterAt) WriteAt(p []byte, _ int64) (n int, err error) {
 	return len(p), nil
 }
 
