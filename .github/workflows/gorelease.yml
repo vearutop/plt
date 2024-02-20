@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: 1.20.x
+  GO_VERSION: 1.22.x
 jobs:
   gorelease:
     runs-on: ubuntu-latest
@@ -35,7 +35,7 @@ jobs:
         with:
           path: |
             ~/go/bin/gorelease
-          key: ${{ runner.os }}-gorelease-latest
+          key: ${{ runner.os }}-gorelease-generic
       - name: Gorelease
         id: gorelease
         run: |
