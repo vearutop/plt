@@ -2,7 +2,7 @@
 package main
 
 import (
-	"github.com/alecthomas/kingpin"
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/vearutop/plt/curl"
 	"github.com/vearutop/plt/loadgen"
 	"github.com/vearutop/plt/s3"

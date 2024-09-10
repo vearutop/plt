@@ -41,7 +41,7 @@ func TestNewJobProducer(t *testing.T) {
 	j, err := nethttp.NewJobProducer(f, lf)
 	require.NoError(t, err)
 
-	j.PrepareRequest = func(i int, req *http.Request) error {
+	j.PrepareRequest = func(_ int, req *http.Request) error {
 		req.URL.RawQuery = "foo=bar"
 
 		return nil

@@ -16,7 +16,7 @@ import (
 )
 
 func TestNewJobProducer(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/?foo=bar", r.URL.RequestURI())
 	}))
 	defer srv.Close()
@@ -43,7 +43,7 @@ func TestNewJobProducer(t *testing.T) {
 	j, err := fh.NewJobProducer(f)
 	require.NoError(t, err)
 
-	j.PrepareRequest = func(i int, req *fasthttp.Request) error {
+	j.PrepareRequest = func(_ int, req *fasthttp.Request) error {
 		req.SetRequestURI(srv.URL + "/?foo=bar")
 
 		return nil
@@ -56,7 +56,7 @@ func TestNewJobProducer(t *testing.T) {
 }
 
 func BenchmarkJobProducer_Job(b *testing.B) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		require.Equal(b, "/?foo=bar", r.URL.RequestURI())
 	}))
 	defer srv.Close()
@@ -82,7 +82,7 @@ func BenchmarkJobProducer_Job(b *testing.B) {
 	j, err := fh.NewJobProducer(f)
 	require.NoError(b, err)
 
-	j.PrepareRequest = func(i int, req *fasthttp.Request) error {
+	j.PrepareRequest = func(_ int, req *fasthttp.Request) error {
 		req.SetRequestURI(srv.URL + "/?foo=bar")
 
 		return nil

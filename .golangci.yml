@@ -20,60 +20,59 @@ linters-settings:
 linters:
   enable-all: true
   disable:
+    - err113
     - noctx
     - errorlint
     - cyclop
-    - goerr113
     - gomnd
     - gocyclo
     - gochecknoglobals
     - funlen
     - gocognit
     - lll
-    - maligned
     - gochecknoglobals
     - gomnd
     - wrapcheck
     - paralleltest
     - forbidigo
-    - exhaustivestruct
-    - interfacer # deprecated
     - forcetypeassert
-    - scopelint # deprecated
-    - ifshort # too many false positives
-    - golint # deprecated
     - varnamelen
     - tagliatelle
     - errname
     - ireturn
     - exhaustruct
     - nonamedreturns
-    - nosnakecase
-    - structcheck
-    - varcheck
-    - deadcode
     - testableexamples
     - dupword
     - depguard
     - tagalign
+    - execinquery
+    - mnd
+    - testifylint
+    - intrange
 
 issues:
   exclude-use-default: false
   exclude-rules:
     - linters:
         - gomnd
+        - mnd
         - goconst
-        - goerr113
         - noctx
         - funlen
         - dupl
-        - structcheck
         - unused
         - unparam
-        - nosnakecase
       path: "_test.go"
     - linters:
         - errcheck # Error checking omitted for brevity.
         - gosec
       path: "example_"
+    - linters:
+        - errcheck
+      text: "Error return value of `fmt.Fprint"
+    - linters:
+        - revive
+      text: "unused-parameter: parameter"
+
 

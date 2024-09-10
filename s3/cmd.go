@@ -2,7 +2,7 @@
 package s3
 
 import (
-	"github.com/alecthomas/kingpin"
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/vearutop/plt/loadgen"
 )
 
@@ -43,7 +43,7 @@ func AddCommand(lf *loadgen.Flags) {
 	s3.Flag("save", "Path to local file to save the entry.").StringVar(&f.Save)
 	s3.Flag("upload", "Path to local file to upload to S3, enables upload load testing.").StringVar(&f.Upload)
 
-	s3.Action(func(kp *kingpin.ParseContext) error {
+	s3.Action(func(_ *kingpin.ParseContext) error {
 		return run(*lf, f)
 	})
 }
