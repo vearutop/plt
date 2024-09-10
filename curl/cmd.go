@@ -5,18 +5,19 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"regexp"
 	"strings"
 
-	"github.com/alecthomas/kingpin"
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/vearutop/plt/fasthttp"
 	"github.com/vearutop/plt/loadgen"
 	"github.com/vearutop/plt/nethttp"
 )
 
 // AddCommand registers curl command into CLI app.
+//
+//nolint:maintidx
 func AddCommand(lf *loadgen.Flags, options ...func(lf *loadgen.Flags, f *nethttp.Flags, j loadgen.JobProducer)) {
 	var (
 		flags   nethttp.Flags
@@ -25,6 +26,8 @@ func AddCommand(lf *loadgen.Flags, options ...func(lf *loadgen.Flags, f *nethttp
 			data       []string
 			compressed bool
 			user       string
+			output     string
+			head       bool
 		}
 		captureStrings = map[string]*[]string{
 			"header":         &capture.header,
@@ -38,11 +41,13 @@ func AddCommand(lf *loadgen.Flags, options ...func(lf *loadgen.Flags, f *nethttp
 			"url":     &flags.URL,
 			"request": &flags.Method,
 			"user":    &capture.user,
+			"output":  &capture.output,
 		}
 		captureBool = map[string]*bool{
 			"compressed":   &capture.compressed,
 			"no-keepalive": &flags.NoKeepalive,
 			"http2":        &flags.HTTP2,
+			"head":         &capture.head,
 		}
 		ignoredString = map[string]*string{}
 		ignoredBool   = map[string]*bool{}
@@ -118,18 +123,21 @@ func AddCommand(lf *loadgen.Flags, options ...func(lf *loadgen.Flags, f *nethttp
 
 	curl.Action(func(kp *kingpin.ParseContext) error {
 		ignoredFlags := make([]string, 0)
+
 		for f, v := range ignoredString {
 			if v != nil && *v != "" {
 				ignoredFlags = append(ignoredFlags, f)
 			}
 		}
+
 		for f, v := range ignoredBool {
 			if v != nil && *v {
 				ignoredFlags = append(ignoredFlags, f)
 			}
 		}
+
 		if len(ignoredFlags) > 0 {
-			log.Printf("Warning, these Flags are ignored: %v\n", ignoredFlags)
+			return fmt.Errorf("these flags are ignored: %v", ignoredFlags)
 		}
 
 		if len(capture.data) == 1 {
@@ -139,11 +147,17 @@ func AddCommand(lf *loadgen.Flags, options ...func(lf *loadgen.Flags, f *nethttp
 		}
 
 		flags.HeaderMap = make(map[string]string, len(capture.header))
+
 		if capture.user != "" {
 			if !strings.Contains(capture.user, ":") {
 				return errors.New("user parameter must be in form user:pass")
 			}
+
 			flags.HeaderMap["Authorization"] = "Basic " + base64.StdEncoding.EncodeToString([]byte(capture.user))
+		}
+
+		if capture.head {
+			flags.Method = http.MethodHead
 		}
 
 		if flags.Body != "" {
@@ -159,13 +173,20 @@ func AddCommand(lf *loadgen.Flags, options ...func(lf *loadgen.Flags, f *nethttp
 			if len(parts) != 2 {
 				continue
 			}
+
 			flags.HeaderMap[http.CanonicalHeaderKey(parts[0])] = strings.Trim(parts[1], " ")
 		}
+
 		if capture.compressed {
 			if _, ok := flags.HeaderMap["Accept-Encoding"]; !ok {
 				flags.HeaderMap["Accept-Encoding"] = "gzip, deflate"
 			}
 		}
+
+		if flags.NoKeepalive && (capture.output == "/dev/null" || capture.output == "nul") {
+			flags.IgnoreResponseBody = true
+		}
+
 		if !strings.HasPrefix(strings.ToLower(flags.URL), "http://") &&
 			!strings.HasPrefix(strings.ToLower(flags.URL), "https://") {
 			flags.URL = "http://" + flags.URL

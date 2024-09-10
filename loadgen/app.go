@@ -1,7 +1,7 @@
 package loadgen
 
 import (
-	"github.com/alecthomas/kingpin"
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/bool64/dev/version"
 )
 

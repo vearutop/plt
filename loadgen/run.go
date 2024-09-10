@@ -62,9 +62,7 @@ func Run(lf Flags, jobProducer JobProducer) error {
 	}
 
 	// Main loop.
-	for i := 0; i < r.n; i++ {
-		i := i
-
+	for i := range r.n {
 		r.mu.Lock()
 		rl := r.rl
 		r.mu.Unlock()
@@ -239,12 +237,12 @@ func (r *runner) captureLiveUI() {
 		return
 	}
 
-	var buf []byte
+	var buf []byte //nolint:prealloc
 
 	w, h := termbox.Size()
 
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			c := termbox.GetCell(x, y)
 
 			buf = append(buf, []byte(string(c.Ch))...)

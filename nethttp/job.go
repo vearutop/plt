@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -147,7 +148,7 @@ func (j *JobProducer) makeTransport2() *http2.Transport {
 		AllowHTTP:          true,
 	}
 
-	t.DialTLSContext = func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
+	t.DialTLSContext = func(_ context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
 		c, err := tls.DialWithDialer(new(net.Dialer), network, addr, cfg)
 		if err != nil {
 			return c, err
@@ -304,14 +305,14 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 	}
 
 	trace := &httptrace.ClientTrace{
-		DNSStart: func(info httptrace.DNSStartInfo) {
+		DNSStart: func(_ httptrace.DNSStartInfo) {
 			dnsStart = time.Now()
 		},
 		DNSDone: func(dnsInfo httptrace.DNSDoneInfo) {
 			j.dnsHist.Add(1000 * time.Since(dnsStart).Seconds())
 		},
 
-		ConnectStart: func(network, addr string) {
+		ConnectStart: func(_, _ string) {
 			connStart = time.Now()
 		},
 		ConnectDone: func(network, addr string, err error) {
@@ -326,11 +327,14 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 		},
 
 		WroteRequest: func(_ httptrace.WroteRequestInfo) {
+			dlStart = time.Now()
+
 			atomic.AddInt64(&j.writeTime, int64(time.Since(start)))
 		},
 
 		GotFirstResponseByte: func() {
 			dlStart = time.Now()
+
 			j.ttfbHist.Add(1000 * time.Since(start).Seconds())
 		},
 	}
@@ -349,6 +353,7 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 	}
 
 	start = time.Now()
+	dlStart = start
 
 	resp, err := tr.RoundTrip(req)
 	if err != nil {
@@ -372,7 +377,7 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 		body := make([]byte, SampleSize+1)
 
 		n, err := io.ReadAtLeast(resp.Body, body, SampleSize+1)
-		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		if err != nil && err != io.EOF && !errors.Is(err, io.ErrUnexpectedEOF) {
 			return 0, err
 		}
 
@@ -390,9 +395,11 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 		j.mu.Unlock()
 	}
 
-	_, err = io.Copy(io.Discard, resp.Body)
-	if err != nil {
-		return 0, err
+	if !j.f.IgnoreResponseBody {
+		_, err = io.Copy(io.Discard, resp.Body)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	err = resp.Body.Close()
@@ -412,13 +419,14 @@ func (j *JobProducer) Job(i int) (time.Duration, error) {
 
 // Flags control HTTP load setup.
 type Flags struct {
-	HeaderMap   map[string]string
-	URL         string
-	Body        string
-	Method      string
-	NoKeepalive bool
-	Compressed  bool
-	Fast        bool
-	HTTP2       bool
-	HTTP3       bool
+	HeaderMap          map[string]string
+	URL                string
+	Body               string
+	Method             string
+	NoKeepalive        bool
+	Compressed         bool
+	Fast               bool
+	IgnoreResponseBody bool
+	HTTP2              bool
+	HTTP3              bool
 }
