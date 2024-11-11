@@ -204,22 +204,14 @@ func run(lf loadgen.Flags, f nethttp.Flags, options ...func(lf *loadgen.Flags, f
 		err error
 	)
 
-	for _, o := range options {
-		o(&lf, &f, nil)
-	}
-
 	if f.Fast {
-		if j, err = fasthttp.NewJobProducer(f); err != nil {
+		if j, err = fasthttp.NewJobProducer(f, lf, options...); err != nil {
 			return fmt.Errorf("failed to init job producer: %w", err)
 		}
 	} else {
-		if j, err = nethttp.NewJobProducer(f, lf); err != nil {
+		if j, err = nethttp.NewJobProducer(f, lf, options...); err != nil {
 			return fmt.Errorf("failed to init job producer: %w", err)
 		}
-	}
-
-	for _, o := range options {
-		o(&lf, &f, j)
 	}
 
 	return loadgen.Run(lf, j)
