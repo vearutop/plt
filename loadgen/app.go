@@ -22,4 +22,8 @@ func (lf *Flags) Register() {
 	kingpin.Flag("slow", "Min duration of slow response.").
 		Default("1s").DurationVar(&lf.SlowResponse)
 	kingpin.Flag("live-ui", "Show live ui with statistics.").BoolVar(&lf.LiveUI)
+
+	if lf.KeyPressed == nil {
+		lf.KeyPressed = make(map[string]func())
+	}
 }

@@ -3,6 +3,8 @@ package loadgen
 import (
 	"io"
 	"time"
+
+	"github.com/gizak/termui/v3/widgets"
 )
 
 // Flags control load testing.
@@ -24,6 +26,9 @@ type Flags struct {
 	// Increment        float64       // Percentage of request rate increment on each step, e.g. 5.5 for 5.5%.
 
 	Output io.Writer
+
+	KeyPressed              map[string]func()
+	PrepareLoadLimitsWidget func(paragraph *widgets.Paragraph)
 }
 
 // Prepare sets conditional defaults.

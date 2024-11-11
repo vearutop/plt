@@ -26,7 +26,8 @@ import (
 
 // JobProducer sends HTTP requests.
 type JobProducer struct {
-	PrepareRequest func(i int, req *http.Request) error
+	PrepareRequest      func(i int, req *http.Request) error
+	PrepareRoundTripper func(tr http.RoundTripper) http.RoundTripper
 
 	bytesWritten int64
 	writeTime    int64
@@ -95,14 +96,22 @@ func (c countingConn) Write(b []byte) (n int, err error) {
 }
 
 func (j *JobProducer) makeTransport() http.RoundTripper {
+	var tr http.RoundTripper
+
 	switch {
 	case j.f.HTTP2:
-		return j.makeTransport2()
+		tr = j.makeTransport2()
 	case j.f.HTTP3:
-		return j.makeTransport3()
+		tr = j.makeTransport3()
 	default:
-		return j.makeTransport1()
+		tr = j.makeTransport1()
 	}
+
+	if j.PrepareRoundTripper != nil {
+		tr = j.PrepareRoundTripper(tr)
+	}
+
+	return tr
 }
 
 func (j *JobProducer) makeTransport1() *http.Transport {
@@ -164,7 +173,7 @@ func (j *JobProducer) makeTransport2() *http2.Transport {
 }
 
 // NewJobProducer creates HTTP load generator.
-func NewJobProducer(f Flags, lf loadgen.Flags) (*JobProducer, error) {
+func NewJobProducer(f Flags, lf loadgen.Flags, options ...func(lf *loadgen.Flags, f *Flags, j loadgen.JobProducer)) (*JobProducer, error) {
 	u, err := url.Parse(f.URL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse URL: %w", err)
@@ -181,8 +190,6 @@ func NewJobProducer(f Flags, lf loadgen.Flags) (*JobProducer, error) {
 
 	j.log += fmt.Sprintln("Host resolved:", strings.Join(addrs, ","))
 
-	j.tr = j.makeTransport()
-
 	j.dnsHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	j.connHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
 	j.tlsHist = &dynhist.Collector{BucketsLimit: 10, WeightFunc: dynhist.LatencyWidth}
@@ -192,6 +199,11 @@ func NewJobProducer(f Flags, lf loadgen.Flags) (*JobProducer, error) {
 	j.respBody = make(map[int][]byte, 5)
 	j.respHeader = make(map[int]http.Header, 5)
 	j.respProto = make(map[int]string, 5)
+
+	for _, o := range options {
+		o(&lf, &f, &j)
+	}
+	j.tr = j.makeTransport()
 
 	if _, ok := f.HeaderMap["User-Agent"]; !ok {
 		f.HeaderMap["User-Agent"] = "plt"

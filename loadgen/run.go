@@ -342,6 +342,12 @@ func (r *runner) decreaseRateLimit() {
 func (r *runner) startLiveUIPoller() {
 	uiEvents := ui.PollEvents()
 	for e := range uiEvents {
+		if f := r.lf.KeyPressed[e.ID]; f != nil {
+			f()
+
+			continue
+		}
+
 		switch e.ID {
 		case "q", "<C-c>":
 			r.exit <- os.Interrupt
@@ -441,6 +447,10 @@ func (r *runner) runLiveUI() {
 			atomic.LoadInt64(&r.concurrencyLimit), atomic.LoadInt64(&r.rateLimit), lastErr)
 
 		loadLimits.SetRect(60, 0, 100, 7)
+
+		if r.lf.PrepareLoadLimitsWidget != nil {
+			r.lf.PrepareLoadLimitsWidget(loadLimits)
+		}
 
 		drawables = append(drawables, requestCounters, loadLimits)
 
