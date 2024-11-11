@@ -40,7 +40,7 @@ func TestNewJobProducer(t *testing.T) {
 		Method:     http.MethodPost,
 		Compressed: true,
 	}
-	j, err := fh.NewJobProducer(f)
+	j, err := fh.NewJobProducer(f, lf)
 	require.NoError(t, err)
 
 	j.PrepareRequest = func(_ int, req *fasthttp.Request) error {
@@ -79,7 +79,7 @@ func BenchmarkJobProducer_Job(b *testing.B) {
 		Method:     http.MethodPost,
 		Compressed: true,
 	}
-	j, err := fh.NewJobProducer(f)
+	j, err := fh.NewJobProducer(f, lf)
 	require.NoError(b, err)
 
 	j.PrepareRequest = func(_ int, req *fasthttp.Request) error {

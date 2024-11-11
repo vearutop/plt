@@ -203,6 +203,7 @@ func NewJobProducer(f Flags, lf loadgen.Flags, options ...func(lf *loadgen.Flags
 	for _, o := range options {
 		o(&lf, &f, &j)
 	}
+
 	j.tr = j.makeTransport()
 
 	if _, ok := f.HeaderMap["User-Agent"]; !ok {

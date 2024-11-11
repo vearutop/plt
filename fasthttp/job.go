@@ -74,7 +74,7 @@ func (c countingConn) Write(b []byte) (n int, err error) {
 }
 
 // NewJobProducer creates load generator.
-func NewJobProducer(f nethttp.Flags, options ...func(lf *loadgen.Flags, f *nethttp.Flags, j loadgen.JobProducer)) (*JobProducer, error) {
+func NewJobProducer(f nethttp.Flags, lf loadgen.Flags, options ...func(lf *loadgen.Flags, f *nethttp.Flags, j loadgen.JobProducer)) (*JobProducer, error) {
 	u, err := url.Parse(f.URL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse URL: %w", err)
@@ -112,7 +112,7 @@ func NewJobProducer(f nethttp.Flags, options ...func(lf *loadgen.Flags, f *netht
 	j.client.MaxConnsPerHost = 10000
 
 	for _, o := range options {
-		o(nil, &f, &j)
+		o(&lf, &f, &j)
 	}
 
 	if _, ok := f.HeaderMap["User-Agent"]; !ok {
