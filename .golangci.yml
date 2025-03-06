@@ -12,8 +12,6 @@ linters-settings:
     threshold: 100
   misspell:
     locale: US
-  unused:
-    check-exported: false
   unparam:
     check-exported: true
 
@@ -29,9 +27,10 @@ linters:
     - gochecknoglobals
     - funlen
     - gocognit
+    - intrange
+    - copyloopvar
     - lll
     - gochecknoglobals
-    - gomnd
     - wrapcheck
     - paralleltest
     - forbidigo
@@ -46,16 +45,14 @@ linters:
     - dupword
     - depguard
     - tagalign
-    - execinquery
     - mnd
     - testifylint
-    - intrange
+    - recvcheck
 
 issues:
   exclude-use-default: false
   exclude-rules:
     - linters:
-        - gomnd
         - mnd
         - goconst
         - noctx
@@ -74,5 +71,4 @@ issues:
     - linters:
         - revive
       text: "unused-parameter: parameter"
-
 
