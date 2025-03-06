@@ -19,71 +19,33 @@ import (
 	"github.com/vearutop/plt/nethttp"
 )
 
+var (
+	// Response time considered a timeout by HTTP client.
+	requestTimeout = 500 * time.Millisecond
+
+	// Response time window, normally distributed.
+	minResp = int64(300 * time.Millisecond)
+	maxResp = int64(510 * time.Millisecond)
+)
+
 func main() {
 	lf := loadgen.Flags{}
 	lf.Register()
 
 	var (
-		// Response time window, normally distributed.
-		minResp = int64(300 * time.Millisecond)
-		maxResp = int64(510 * time.Millisecond)
-
 		// Atomic counters.
 		cbFailed int64
 		cbPassed int64
 		cbState  int64
 
-		// Response time considered a timeout by HTTP client.
-		timeout = 500 * time.Millisecond
-
-		// ReadyToTrip params.
-		requestsThreshold = uint32(100)
-		errorThreshold    = 0.03
-
-		mu             sync.Mutex
-		readyToTripMsg string
+		mu sync.Mutex
 	)
 
-	cbSettings := gobreaker.Settings{
-		// Name is the name of the CircuitBreaker.
-		Name: "acme",
+	cbSettings, msg := delayedSettings()
+	//cbSettings, msg := simpleSettings()
 
-		// MaxRequests is the maximum number of requests allowed to pass through
-		// when the CircuitBreaker is half-open.
-		// If MaxRequests is 0, the CircuitBreaker allows only 1 request.
-		MaxRequests: 500,
-
-		// Interval is the cyclic period of the closed state
-		// for the CircuitBreaker to clear the internal Counts.
-		// If Interval is less than or equal to 0, the CircuitBreaker doesn't clear internal Counts during the closed state.
-		Interval: 2000 * time.Millisecond,
-
-		// Timeout is the period of the open state,
-		// after which the state of the CircuitBreaker becomes half-open.
-		// If Timeout is less than or equal to 0, the timeout value of the CircuitBreaker is set to 60 seconds.
-		Timeout: 3 * time.Second,
-
-		// OnStateChange is called whenever the state of the CircuitBreaker changes.
-		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
-			atomic.StoreInt64(&cbState, int64(to))
-		},
-
-		// ReadyToTrip is called with a copy of Counts whenever a request fails in the closed state.
-		// If ReadyToTrip returns true, the CircuitBreaker will be placed into the open state.
-		// If ReadyToTrip is nil, default ReadyToTrip is used.
-		// Default ReadyToTrip returns true when the number of consecutive failures is more than 5.
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			enoughRequests := counts.Requests > requestsThreshold
-			errorRate := float64(counts.TotalFailures) / float64(counts.Requests)
-			reachedFailureLvl := errorRate >= errorThreshold
-
-			mu.Lock()
-			defer mu.Unlock()
-
-			readyToTripMsg = fmt.Sprintf("%d/%d failed (%.2f%%), %s",
-				counts.TotalFailures, counts.Requests, 100*errorRate, time.Now().Format(time.TimeOnly))
-			return enoughRequests && reachedFailureLvl
-		},
+	cbSettings.OnStateChange = func(name string, from gobreaker.State, to gobreaker.State) {
+		atomic.StoreInt64(&cbState, int64(to))
 	}
 
 	// This handler returns 200 OK after a random delay between minResp and maxResp.
@@ -107,7 +69,7 @@ func main() {
 			gobreaker.State(atomic.LoadInt64(&cbState)).String(),
 			atomic.LoadInt64(&cbFailed),
 			atomic.LoadInt64(&cbPassed),
-			readyToTripMsg,
+			msg(),
 		)
 	}
 
@@ -123,9 +85,9 @@ func main() {
 	curl.AddCommand(&lf, func(lf *loadgen.Flags, f *nethttp.Flags, j loadgen.JobProducer) {
 		if nj, ok := j.(*nethttp.JobProducer); ok {
 			nj.PrepareRoundTripper = func(tr http.RoundTripper) http.RoundTripper {
-				return CircuitBreakerMiddleware(cbSettings, &cbFailed)(
+				return timeoutCB(cbSettings, false)(
 					roundTripperFunc(func(r *http.Request) (*http.Response, error) {
-						ctx, cancel := context.WithTimeout(r.Context(), timeout)
+						ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 						defer cancel()
 
 						atomic.AddInt64(&cbPassed, 1)
@@ -146,4 +108,10 @@ func main() {
 
 	// Running the app.q
 	kingpin.Parse()
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }
