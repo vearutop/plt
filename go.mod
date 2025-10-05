@@ -7,7 +7,7 @@ toolchain go1.23.0
 require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/aws/aws-sdk-go v1.55.5
-	github.com/bool64/dev v0.2.39
+	github.com/bool64/dev v0.2.43
 	github.com/gizak/termui/v3 v3.1.0
 	github.com/nsf/termbox-go v1.1.1
 	github.com/quic-go/quic-go v0.48.1
