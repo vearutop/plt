@@ -153,7 +153,7 @@ func (j *jobProducer) RequestCounts() map[string]int {
 	return nil
 }
 
-// Print prints additional stats.
+// String prints additional stats.
 func (j *jobProducer) String() string {
 	if j.totBytes == 0 {
 		return ""
